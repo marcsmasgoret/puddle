@@ -67,7 +67,7 @@ function fern(r: () => number, color: THREE.Color) {
       }
     }
   }
-  return colorize(mergeGeometries(parts.map((p) => p.toNonIndexed())), color, 0.25);
+  return colorize(mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p))), color, 0.25);
 }
 
 function flower(r: () => number, petal: THREE.Color) {
@@ -83,7 +83,7 @@ function flower(r: () => number, petal: THREE.Color) {
   for (let k = 0; k < head.attributes.position.count; k++) petal.toArray(hc, k * 3);
   head.setAttribute('color', new THREE.BufferAttribute(hc, 3));
   head.deleteAttribute('uv');
-  return mergeGeometries([stem, head.toNonIndexed()]);
+  return mergeGeometries([stem, head.index ? head.toNonIndexed() : head]);
 }
 
 function mushroom(r: () => number) {

@@ -182,7 +182,7 @@ export function umbrella(colors: [string, string], seed: number) {
     (Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 16) % 2 ? a : b).toArray(col, k * 3);
   }
   canopy.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const cm = new THREE.Mesh(canopy.toNonIndexed(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }));
+  const cm = new THREE.Mesh(canopy.index ? canopy.toNonIndexed() : canopy, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide, flatShading: true }));
   cm.position.y = 2.15;
   g.add(pole, cm);
   g.rotation.set((r() - 0.5) * 0.12, r() * 6, (r() - 0.5) * 0.12);
