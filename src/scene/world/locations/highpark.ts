@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
 import { ridge, hazed, openWater, broadleaves, conifers, rng, reflective, cnTower, nightLights, windowLights } from '../props';
+import { groundCover } from '../groundCover';
 
 
 const def: LocationDef = {
@@ -74,6 +75,8 @@ const def: LocationDef = {
     g.add(reflective(city));
     // the lake-shore ridge under the city
     g.add(ridge({ z: -1000, width: 6000, base: -5, hill: 25, treeH: 10, treeDensity: 0.4, color: hazed('#3d5240', haze, 1200, 900), haze, mist: 0.6, seed: 31 }));
+    // low cover: grass, ferns, wildflowers, mushrooms (off the puddle and water)
+    g.add(groundCover({ area: [-10, -16, 10, 2.5], grass: 3000, flowers: 420 }, season, (x, z) => ctx.sdfAt(x, z) > 0.07 && !def.water?.(x, z), 6, ctx.sdfAt));
     return { group: g };
   },
 };

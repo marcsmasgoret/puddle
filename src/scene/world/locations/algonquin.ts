@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
 import { ridge, hazed, openWater, conifers, rng, reflective, tint } from '../props';
+import { groundCover } from '../groundCover';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /** A canoe: a lathe-like hull narrowing and rising to both ends. */
@@ -151,6 +152,8 @@ const def: LocationDef = {
       flame2.scale.set(1, 2 - f, 1);
       firelight.intensity = (4 + night * 22) * f;
     };
+    // low cover: grass, ferns, wildflowers, mushrooms (off the puddle and water)
+    g.add(groundCover({ area: [-9, -6.2, 9, 2.5], grass: 1400, ferns: 90, flowers: 90, mushrooms: 30 }, season, (x, z) => ctx.sdfAt(x, z) > 0.07 && !def.water?.(x, z), 7, ctx.sdfAt));
     return { group: g, update };
   },
 };

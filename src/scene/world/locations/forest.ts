@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
 import { ridge, conifers, broadleaves, boulders, hazed, rng } from '../props';
+import { groundCover } from '../groundCover';
 
 const def: LocationDef = {
   id: 'forest',
@@ -69,6 +70,8 @@ const def: LocationDef = {
         { snow: season === 'winter' },
       ),
     );
+    // low cover: grass, ferns, wildflowers, mushrooms (off the puddle and water)
+    g.add(groundCover({ area: [-10, -14, 10, 2.5], grass: 3600, ferns: 170, flowers: 260, mushrooms: 60 }, season, (x, z) => ctx.sdfAt(x, z) > 0.07 && !def.water?.(x, z), 5, ctx.sdfAt));
     return { group: g };
   },
 };

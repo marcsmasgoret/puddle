@@ -370,7 +370,10 @@ export class Toys {
       if (bin.f <= 0) continue;
       const cx = bin.x / bin.f, cz = bin.z / bin.f;
       const spread = Math.sqrt(Math.max(bin.xx / bin.f - cx * cx + bin.zz / bin.f - cz * cz, 0));
-      const R = Math.max(spread * 1.2, minR);
+      // keep the dent under the hull: a Gaussian wider than the hull would
+      // leave a visible crater rim around the toy (real water meets the
+      // hull at its waterline and is flat outside it)
+      const R = Math.max(spread * 0.75, minR);
       // a load can't push the surface below the bed: cap at ρ g H
       const H = Math.max(this.solver.depthAt(cx, cz), 0.001);
       const p = Math.min(bin.f / (Math.PI * R * R), 0.9 * fluid.density * g * H);

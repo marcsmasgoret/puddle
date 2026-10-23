@@ -154,40 +154,62 @@ function swayMaterial(m: THREE.MeshStandardMaterial) {
 }
 
 function pineGeometry(seed: number, snow: boolean) {
+  // A spruce/pine of unit height ~4.3: a tapering trunk and a stack of
+  // drooping, star-edged branch tiers. Each tier is a shallow skirt: a
+  // centre point, an inner ring and a jagged outer ring of branch tips that
+  // hang lower, coloured dark inside and lighter at the tips (new growth).
   const r = rng(seed);
   const parts: THREE.BufferGeometry[] = [];
-  const trunk = new THREE.CylinderGeometry(0.03, 0.06, 1.0, 6);
-  trunk.translate(0, 0.5, 0);
-  parts.push(setColor(trunk, '#4a3526'));
-  const tiers = 7;
+  const trunk = new THREE.CylinderGeometry(0.035, 0.075, 4.0, 7);
+  trunk.translate(0, 2.0, 0);
+  parts.push(setColor(trunk, '#45301f'));
+  const tiers = 12;
+  const dark = new THREE.Color('#1f3622'), mid = new THREE.Color('#2f4c2e'), tip = new THREE.Color('#4a6a3c');
+  const white = new THREE.Color(0.9, 0.93, 0.96);
   for (let t = 0; t < tiers; t++) {
-    const f = t / tiers;
-    const radius = 0.62 * (1 - f * 0.85) * (0.9 + 0.2 * r());
-    const height = 1.0 * (1 - f * 0.4);
-    const cone = new THREE.ConeGeometry(radius, height, 7, 3, true);
-    cone.rotateY(r() * Math.PI);
-    const green = new THREE.Color('#2f4a2c').multiplyScalar(0.85 + 0.25 * f);
-    const g = setColor(cone, green);
-    if (snow) {
-      // snow settles on the upper part of each tier and thins toward the
-      // drooping tips, so the tree still reads as a dark pine under a load
-      // of snow (every face of a cone points the same amount upward, so a
-      // normal test alone would turn the whole tree white)
-      const pos = g.attributes.position as THREE.BufferAttribute;
-      const col = g.attributes.color as THREE.BufferAttribute;
-      const white = new THREE.Color(0.9, 0.93, 0.96);
-      const c = new THREE.Color();
-      for (let k = 0; k < col.count; k++) {
-        const t = pos.getY(k) / height + 0.5; // 0 at the rim, 1 at the apex
-        const s = THREE.MathUtils.smoothstep(t, 0.3, 0.85) * 0.9;
-        c.copy(green).lerp(white, s);
-        col.setXYZ(k, c.r, c.g, c.b);
+    const f = t / (tiers - 1);
+    const y = 0.55 + f * 3.55;
+    const R = 0.72 * Math.pow(1 - f, 0.9) * (0.9 + 0.2 * r()) + 0.06;
+    const droop = 0.18 + 0.32 * R;
+    const n = 14;
+    const pos: number[] = [];
+    const col: number[] = [];
+    const rot = r() * Math.PI * 2;
+    const ring = (rad: number, dy: number, jag: number) => {
+      const pts: THREE.Vector3[] = [];
+      for (let k = 0; k < n; k++) {
+        const a = rot + (k / n) * Math.PI * 2;
+        const rr = rad * (1 - jag * (k % 2 ? 0.45 : 0) + (r() - 0.5) * 0.12);
+        pts.push(new THREE.Vector3(Math.cos(a) * rr, y - dy * (k % 2 ? 0.7 : 1), Math.sin(a) * rr));
       }
+      return pts;
+    };
+    const top = new THREE.Vector3(0, y + 0.22, 0);
+    const inner = ring(R * 0.45, droop * 0.25, 0.2);
+    const outer = ring(R, droop, 1);
+    const tint = mid.clone().lerp(tip, r() * 0.4);
+    const push = (v: THREE.Vector3, c: THREE.Color) => {
+      pos.push(v.x, v.y, v.z);
+      col.push(c.r, c.g, c.b);
+    };
+    const snowy = (c: THREE.Color, k: number) => (snow ? c.clone().lerp(white, k) : c);
+    for (let k = 0; k < n; k++) {
+      const k2 = (k + 1) % n;
+      push(top, snowy(dark, 0.65)); push(inner[k], snowy(tint, 0.45)); push(inner[k2], snowy(tint, 0.45));
+      push(inner[k], snowy(tint, 0.45)); push(outer[k], snowy(tip, 0.12)); push(outer[k2], snowy(tip, 0.12));
+      push(inner[k], snowy(tint, 0.45)); push(outer[k2], snowy(tip, 0.12)); push(inner[k2], snowy(tint, 0.45));
     }
-    g.translate(0, 0.35 + f * 3.3 + height / 2, 0);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
     parts.push(g);
   }
-  const g = mergeGeometries(parts);
+  const g = mergeGeometries(parts.map((q) => {
+    const x = q.index ? q.toNonIndexed() : q;
+    if (x.attributes.uv) x.deleteAttribute('uv');
+    return x;
+  }));
   g.computeVertexNormals();
   return g;
 }
@@ -195,7 +217,7 @@ function pineGeometry(seed: number, snow: boolean) {
 /** Conifers at the given spots [x, z, height]. */
 export function conifers(spots: [number, number, number][], season: Season, seed = 1) {
   const snow = season === 'winter';
-  const mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, side: THREE.DoubleSide }));
+  const mat = swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
   const variants = [pineGeometry(3 + seed, snow), pineGeometry(8 + seed, snow), pineGeometry(15 + seed, snow)];
   const group = new THREE.Group();
   const m = new THREE.Matrix4();
@@ -227,34 +249,84 @@ const FOLIAGE: Record<Season, string[]> = {
 };
 
 function broadleafGeometry(seed: number, season: Season) {
+  // A maple/oak of unit height ~3.4: a real branching skeleton (trunk,
+  // limbs, branches, and twigs that show in winter) under a lumpy crown of
+  // leaf clusters. Cluster normals are blended toward the whole crown's
+  // normal, so the crown shades as one soft volume with leafy edges, and
+  // clusters deeper inside are darker (self-shadowing).
   const r = rng(seed);
   const parts: THREE.BufferGeometry[] = [];
-  const trunk = new THREE.CylinderGeometry(0.06, 0.11, 1.6, 7);
-  trunk.translate(0, 0.8, 0);
-  parts.push(setColor(trunk, '#5a4636'));
-  // a few limbs (always there; the only thing visible in winter)
-  for (let b = 0; b < 4; b++) {
-    const limb = new THREE.CylinderGeometry(0.02, 0.045, 1.1, 5);
-    limb.translate(0, 0.55, 0);
-    limb.rotateZ((r() - 0.5) * 1.2);
-    limb.rotateY(r() * Math.PI * 2);
-    limb.translate(0, 1.4 + r() * 0.4, 0);
-    parts.push(setColor(limb, '#5a4636'));
-  }
+  const bark = new THREE.Color('#57432f');
+  const tips: THREE.Vector3[] = [];
+  const limb = (a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number) => {
+    const d = b.clone().sub(a);
+    const c = new THREE.CylinderGeometry(rb, ra, d.length(), 6);
+    c.translate(0, d.length() / 2, 0);
+    c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+    c.translate(a.x, a.y, a.z);
+    parts.push(setColor(c, '#' + bark.getHexString()));
+  };
+  const grow = (from: THREE.Vector3, dir: THREE.Vector3, len: number, rad: number, depth: number) => {
+    const to = from.clone().addScaledVector(dir, len);
+    limb(from, to, rad, rad * 0.65);
+    if (depth === 0) {
+      tips.push(to);
+      return;
+    }
+    const kids = depth === 2 ? 3 + Math.floor(r() * 2) : 2 + Math.floor(r() * 2);
+    for (let k = 0; k < kids; k++) {
+      const a = r() * Math.PI * 2;
+      const spread = 0.45 + r() * 0.45;
+      const nd = dir.clone().multiplyScalar(1 - spread).add(new THREE.Vector3(Math.cos(a) * spread, spread * 0.4, Math.sin(a) * spread)).normalize();
+      grow(to.clone().lerp(from, r() * 0.3), nd, len * (0.6 + r() * 0.15), rad * 0.62, depth - 1);
+    }
+  };
+  limb(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.3, 0), 0.12, 0.085);
+  grow(new THREE.Vector3(0, 1.25, 0), new THREE.Vector3(0, 1, 0), 0.75, 0.085, 3);
   const cols = FOLIAGE[season];
   if (cols.length) {
-    for (let k = 0; k < 7; k++) {
-      let blob: THREE.BufferGeometry = new THREE.IcosahedronGeometry(0.55 + r() * 0.35, 2);
+    const center = new THREE.Vector3();
+    tips.forEach((t) => center.add(t));
+    center.divideScalar(tips.length);
+    center.y -= 0.15;
+    const radius = Math.max(...tips.map((t) => t.distanceTo(center))) + 0.35;
+    for (const t of tips) {
+      if (r() < 0.15) continue;
+      let blob: THREE.BufferGeometry = new THREE.IcosahedronGeometry(0.32 + r() * 0.22, 2);
       blob.deleteAttribute('normal');
       blob.deleteAttribute('uv');
       blob = mergeVertices(blob);
-      blob.translate((r() - 0.5) * 1.3, 2.1 + r() * 1.0, (r() - 0.5) * 1.3);
+      const pos = blob.attributes.position as THREE.BufferAttribute;
+      const ph = r() * 10;
+      for (let k = 0; k < pos.count; k++) {
+        const v = new THREE.Vector3().fromBufferAttribute(pos, k);
+        v.multiplyScalar(1 + 0.22 * Math.sin(v.x * 9 + ph) * Math.sin(v.y * 8 + ph) * Math.sin(v.z * 10));
+        pos.setXYZ(k, v.x + t.x, v.y + t.y + 0.1, v.z + t.z);
+      }
       blob.computeVertexNormals();
-      parts.push(setColor(blob, cols[Math.floor(r() * cols.length)]));
+      // crown-shaded normals and depth-darkened colour
+      const nrm = blob.attributes.normal as THREE.BufferAttribute;
+      const col = new Float32Array(pos.count * 3);
+      const base = new THREE.Color(cols[Math.floor(r() * cols.length)]);
+      for (let k = 0; k < pos.count; k++) {
+        const v = new THREE.Vector3().fromBufferAttribute(pos, k);
+        const cn = v.clone().sub(center).normalize();
+        const bn = new THREE.Vector3().fromBufferAttribute(nrm, k);
+        const n = bn.lerp(cn, 0.65).normalize();
+        nrm.setXYZ(k, n.x, n.y, n.z);
+        const depth = THREE.MathUtils.clamp(v.distanceTo(center) / radius, 0, 1);
+        const c = base.clone().multiplyScalar(0.55 + 0.6 * depth * depth);
+        c.toArray(col, k * 3);
+      }
+      blob.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      parts.push(blob.index ? blob.toNonIndexed() : blob);
     }
   }
-  const g = mergeGeometries(parts);
-  g.computeVertexNormals();
+  const g = mergeGeometries(parts.map((q) => {
+    const x = q.index ? q.toNonIndexed() : q;
+    if (x.attributes.uv) x.deleteAttribute('uv');
+    return x;
+  }));
   return g;
 }
 
