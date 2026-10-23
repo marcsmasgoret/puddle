@@ -1,11 +1,14 @@
 // Ground around the puddle and the puddle bed beneath the water.
 //
-// Both use MeshStandardMaterial (so they get real lighting, shadows and the
-// sky environment) with procedural colour injected. Two physical effects are
-// added on top:
-//   • Wet ring: soil next to the water is soaked. Water fills the pores, which
-//     lowers the refractive-index contrast at grain surfaces so less light
-//     scatters back out: wet soil is darker and glossier.
+// Both use MeshStandardMaterial (real lighting, shadows and the sky
+// environment) with procedural colour injected. Each location has its own
+// ground pattern (moss, sand, asphalt, pool tile, dock planks, park grass,
+// Canadian Shield granite, shoreline pebbles), with seasonal overlays (snow,
+// fallen leaves, spring green) and two physical effects:
+//   • Wet ground: water fills the pores between grains, lowering the
+//     refractive-index contrast at their surfaces, so less light scatters
+//     back out: wet ground is darker and glossier. Applied in a ring around
+//     the puddle, where splashes land, and everywhere when it rains.
 //   • Caustics: on the bed, the direct sunlight is multiplied by the caustic
 //     intensity computed from the wave surface (caustics.ts).
 import * as THREE from 'three';
@@ -13,29 +16,30 @@ import { NOISE } from './glsl';
 import type { ShallowWaterSolver } from '../physics/solver';
 import { WETMAP_SIZE } from './wetmap';
 
-export interface GroundStyle {
-  moss: THREE.Color;
-  earth: THREE.Color;
-  stone: THREE.Color;
-  litter: THREE.Color;
-  mud: THREE.Color;
+export type GroundStyleId = 'forest' | 'sand' | 'asphalt' | 'tile' | 'planks' | 'park' | 'granite' | 'shore';
+const STYLE_INDEX: Record<GroundStyleId, number> = { forest: 0, sand: 1, asphalt: 2, tile: 3, planks: 4, park: 5, granite: 6, shore: 7 };
+
+export interface GroundLook {
+  style: GroundStyleId;
+  /** main, secondary and accent colours of the ground pattern */
+  a: string;
+  b: string;
+  c: string;
+  /** puddle bed colours */
+  bed: string;
+  bedAccent: string;
 }
 
-export const FOREST_GROUND: GroundStyle = {
-  moss: new THREE.Color('#5f7336'),
-  earth: new THREE.Color('#6a5639'),
-  stone: new THREE.Color('#8a877b'),
-  litter: new THREE.Color('#7b5634'),
-  mud: new THREE.Color('#7a6a52'),
-};
+export interface SeasonLook {
+  /** 0…1 snow cover */
+  snow: number;
+  /** 0…1 fallen leaves */
+  leaves: number;
+  /** grass tint multiplier (spring bright, autumn straw, winter dull) */
+  grass: [number, number, number];
+}
 
-export function createGroundMaterial(
-  solver: ShallowWaterSolver,
-  caustics: THREE.Texture,
-  wetMap: THREE.Texture,
-  style: GroundStyle,
-  bed: boolean,
-) {
+export function createGroundMaterial(solver: ShallowWaterSolver, caustics: THREE.Texture, wetMap: THREE.Texture, bed: boolean) {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, envMapIntensity: 0.45 });
   if (bed) mat.defines = { BED: '' };
   // ground and bed share the same patch code, so give them distinct shader
@@ -51,11 +55,16 @@ export function createGroundMaterial(
     uRingRough: { value: 0.78 },
     uOrigin: { value: new THREE.Vector2(...solver.origin) },
     uExtent: { value: new THREE.Vector2(...solver.extent) },
-    uMoss: { value: style.moss },
-    uEarth: { value: style.earth },
-    uStone: { value: style.stone },
-    uLitter: { value: style.litter },
-    uMud: { value: style.mud },
+    uStyle: { value: 0 },
+    uA: { value: new THREE.Color() },
+    uB: { value: new THREE.Color() },
+    uC: { value: new THREE.Color() },
+    uBed: { value: new THREE.Color() },
+    uBedAccent: { value: new THREE.Color() },
+    uSnow: { value: 0 },
+    uLeaves: { value: 0 },
+    uGrass: { value: new THREE.Vector3(1, 1, 1) },
+    uRain: { value: 0 },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -69,11 +78,75 @@ export function createGroundMaterial(
         varying vec3 vWPos;
         uniform sampler2D uShape, uCaustics, uWetMap;
         uniform vec2 uOrigin, uExtent, uWetSize;
-        uniform vec3 uStain;
-        uniform float uWets, uRingRough;
-        uniform vec3 uMoss, uEarth, uStone, uLitter, uMud;
+        uniform vec3 uStain, uA, uB, uC, uBed, uBedAccent, uGrass;
+        uniform float uWets, uRingRough, uSnow, uLeaves, uRain;
+        uniform int uStyle;
         ${NOISE}
-        float gWet; float gGloss; float gSdf; vec2 gUv;`,
+        float gWet; float gGloss; float gSdf; vec2 gUv; float gSnow;
+
+        // ── ground patterns, one per location ─────────────────────────────
+        vec3 groundColor(vec2 p, float fine) {
+          if (uStyle == 0) {            // forest: soft moss over earth, needle litter
+            float m = fbm(p * 0.9);
+            vec3 col = mix(uA, uB * uGrass, 0.55 + 0.45 * smoothstep(0.35, 0.7, m));
+            return mix(col, uC, smoothstep(0.6, 0.85, fbm(p * 2.3 + 9.0)) * 0.35);
+          } else if (uStyle == 1) {     // sand: wind ripples and darker patches
+            float r = sin((p.x * 0.6 + p.y + fbm(p * 0.7) * 2.0) * 32.0) * 0.5 + 0.5;
+            vec3 col = mix(uA, uB, smoothstep(0.3, 0.8, fbm(p * 0.6)) * 0.5);
+            return col * (0.93 + 0.07 * r);
+          } else if (uStyle == 2) {     // asphalt: aggregate speckle, tar patches, a lane line
+            vec3 col = uA * (0.85 + 0.3 * vnoise(p * 140.0)) * (0.9 + 0.2 * fbm(p * 0.8));
+            col = mix(col, uA * 0.6, smoothstep(0.65, 0.75, fbm(p * 1.7 + 3.0)) * 0.6);
+            return col;
+          } else if (uStyle == 3) {     // pool deck: square pavers with grout
+            vec2 t = fract(p / 0.3);
+            float grout = 1.0 - smoothstep(0.0, 0.02, min(min(t.x, t.y), min(1.0 - t.x, 1.0 - t.y)));
+            vec3 col = uA * (0.92 + 0.12 * hash12(floor(p / 0.3)));
+            return mix(col, uC, grout);
+          } else if (uStyle == 4) {     // dock planks running along x
+            float w = 0.14;
+            float row = floor(p.y / w);
+            float gap = 1.0 - smoothstep(0.0, 0.012, min(fract(p.y / w), 1.0 - fract(p.y / w)) * w);
+            float grain = vnoise(vec2(p.x * 3.0, p.y * 60.0) + row * 7.0);
+            vec3 col = mix(uA, uB, 0.3 + 0.5 * hash12(vec2(row, 1.0)) ) * (0.85 + 0.25 * grain);
+            float knot = smoothstep(0.06, 0.0, length(vec2(fract(p.x * 0.7 + row * 0.37) - 0.5, (fract(p.y / w) - 0.5) * 0.3)));
+            return mix(mix(col, uC * 0.8, knot * 0.5), uC * 0.35, gap);
+          } else if (uStyle == 5) {     // park lawn
+            float m = fbm(p * 0.5);
+            vec3 col = mix(uA, uB, smoothstep(0.3, 0.7, m)) * uGrass;
+            return col * (0.9 + 0.2 * vnoise(p * 60.0));
+          } else if (uStyle == 6) {     // Canadian Shield granite: pink feldspar, quartz, biotite, lichen
+            vec3 col = mix(uA, uB, smoothstep(0.35, 0.65, fbm(p * 1.2)));
+            float g = vnoise(p * 180.0);
+            col = mix(col, vec3(0.9, 0.88, 0.85), step(0.82, g) * 0.5);   // quartz
+            col = mix(col, vec3(0.12), step(0.9, vnoise(p * 210.0 + 5.0)) * 0.6); // biotite
+            float lichen = smoothstep(0.62, 0.7, fbm(p * 3.0 + 11.0));
+            return mix(col, uC, lichen * 0.6);
+          } else {                       // shoreline: small rounded pebbles in sand
+            vec2 pw = vec2(vnoise(p * 12.0), vnoise(p * 12.0 + 3.0)) * 0.4;
+            vec3 v = voronoi(p * 18.0 + pw);
+            float peb = smoothstep(0.4, 0.28, v.x) * smoothstep(0.25, 0.6, fbm(p * 0.7));
+            vec3 stone = mix(uA, uB, v.z) * (0.9 + 0.15 * fine);
+            return mix(uC * (0.92 + 0.15 * fine), stone, peb * 0.75);
+          }
+        }
+        vec3 bedColor(vec2 p, float fine) {
+          if (uStyle == 3) {             // pool: small blue mosaic tiles
+            vec2 t = fract(p / 0.025);
+            float grout = 1.0 - smoothstep(0.0, 0.12, min(min(t.x, t.y), min(1.0 - t.x, 1.0 - t.y)));
+            vec3 col = uBed * (0.85 + 0.3 * hash12(floor(p / 0.025)));
+            return mix(col, uBedAccent, grout * 0.7);
+          }
+          if (uStyle == 4) return groundColor(p, fine) * 0.9;   // a puddle on the planks
+          if (uStyle == 2) return groundColor(p, fine) * 0.95;  // on the asphalt
+          // natural beds: silt with scattered, irregular gravel. Its texture is
+          // what makes the refraction wobble visible.
+          vec2 gw = vec2(vnoise(p * 30.0), vnoise(p * 30.0 + 7.0)) * 0.6;
+          vec3 g = voronoi(p * 22.0 + gw);
+          float gravel = smoothstep(0.34, 0.2, g.x) * step(0.55, g.z);
+          vec3 b = uBed * (0.8 + 0.4 * vnoise(p * 14.0)) * (0.9 + 0.2 * fine);
+          return mix(b, uBedAccent * (0.55 + 0.45 * g.z) * (0.85 + 0.3 * fine), gravel * 0.7);
+        }`,
       )
       .replace(
         '#include <color_fragment>',
@@ -89,23 +162,23 @@ export function createGroundMaterial(
           if (all(greaterThan(vWPos.xz, uOrigin - 0.25)) && all(lessThan(vWPos.xz, uOrigin + uExtent + 0.25))) discard;
         #endif
         vec2 p = vWPos.xz;
-        // forest floor: soft moss with gentle patches of earth and needle
-        // litter (low contrast, in keeping with the calm art style)
-        float m = fbm(p * 0.9);
         float fine = vnoise(p * 38.0) * 0.6 + vnoise(p * 90.0) * 0.4;
-        vec3 col = mix(uEarth, uMoss, 0.55 + 0.45 * smoothstep(0.35, 0.7, m));
-        col = mix(col, uLitter, smoothstep(0.6, 0.85, fbm(p * 2.3 + 9.0)) * 0.35);
+        vec3 col = groundColor(p, fine);
+        // fallen leaves (autumn): scattered blots in warm colours
+        if (uLeaves > 0.0) {
+          // drifts of leaves: small, varied, gathered in patches
+          vec2 lw = vec2(vnoise(p * 9.0), vnoise(p * 9.0 + 4.0)) * 0.5;
+          vec3 lv = voronoi(p * 26.0 + lw);
+          float leafPatch = smoothstep(0.35, 0.65, fbm(p * 0.8 + 2.0));
+          // fewer on swept surfaces (street, deck, dock) than on the ground
+          float amt = uLeaves * ((uStyle == 2 || uStyle == 3 || uStyle == 4) ? 0.3 : 1.0);
+          float leaf = smoothstep(0.3, 0.18, lv.x * (1.0 + 0.6 * fract(lv.z * 13.0))) * step(1.0 - amt * 0.7 * leafPatch, lv.z);
+          vec3 lc = mix(vec3(0.75, 0.32, 0.08), vec3(0.85, 0.62, 0.12), fract(lv.z * 7.0));
+          col = mix(col, lc, leaf);
+        }
         col *= 0.88 + 0.24 * fine;
-        // puddle bed: silt with scattered, irregular gravel. Its fine texture
-        // is what lets you see the refraction wobble.
-        vec2 gw = vec2(vnoise(p * 30.0), vnoise(p * 30.0 + 7.0)) * 0.6;
-        vec3 g = voronoi(p * 22.0 + gw);
-        float gravel = smoothstep(0.34, 0.2, g.x) * step(0.55, g.z);
-        vec3 bed = uMud * (0.8 + 0.4 * vnoise(p * 14.0)) * (0.9 + 0.2 * fine);
-        bed = mix(bed, uStone * (0.55 + 0.45 * g.z) * (0.85 + 0.3 * fine), gravel * 0.7);
-        bed = mix(bed, uMoss * 0.8, smoothstep(0.55, 0.8, m) * 0.35);
         float underwater = 1.0 - smoothstep(-0.03, 0.0, gSdf);
-        col = mix(col, bed, underwater);
+        col = mix(col, bedColor(p, fine), underwater);
         // wet ring: width varies along the edge
         float ring = 0.035 + 0.06 * vnoise(p * 4.0);
         gWet = (1.0 - smoothstep(0.0, ring, gSdf)) * uWets;
@@ -113,19 +186,22 @@ export function createGroundMaterial(
         vec2 wuv = vec2(vWPos.x / uWetSize.x + 0.5, 0.5 - vWPos.z / uWetSize.y);
         if (all(greaterThan(wuv, vec2(0.0))) && all(lessThan(wuv, vec2(1.0))))
           gWet = max(gWet, texture2D(uWetMap, wuv).r * 0.9);
+        // rain wets everything
+        gWet = max(gWet, uRain * 0.85);
         // Under water there is no air–film sheen: the stone–water interface
         // reflects very little, so the glossiness applies only above water.
         gGloss = gWet * smoothstep(-0.004, 0.004, gSdf);
-        // soaked ground: water darkens it (≈ half the albedo), honey leaves an
-        // amber film, oobleck a pale starch crust; mercury doesn't wet at all
         col *= mix(vec3(1.0), uStain, gWet);
-        col = min(col, vec3(1.0));
-        diffuseColor.rgb = col;`,
+        // snow cover: thinner near the water (meltwater) and patchy at the edges
+        gSnow = uSnow * smoothstep(0.05, 0.25, gSdf) * smoothstep(0.25, 0.45, fbm(p * 1.5) + uSnow * 0.5);
+        col = mix(col, vec3(0.93, 0.95, 0.98) * (0.94 + 0.06 * fine), gSnow);
+        diffuseColor.rgb = min(col, vec3(1.0));`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, uRingRough, gGloss);`,
+        roughnessFactor = mix(roughnessFactor, uRingRough, gGloss);
+        roughnessFactor = mix(roughnessFactor, 0.7, gSnow);`,
       )
       .replace(
         '#include <lights_fragment_end>',
@@ -148,9 +224,28 @@ export function applyGroundFluid(mat: THREE.Material, stain: [number, number, nu
   u.uRingRough.value = ringRough;
 }
 
+/** Location pattern and colours. */
+export function applyGroundLook(mat: THREE.Material, look: GroundLook) {
+  const u = mat.userData.uniforms;
+  u.uStyle.value = STYLE_INDEX[look.style];
+  u.uA.value.set(look.a);
+  u.uB.value.set(look.b);
+  u.uC.value.set(look.c);
+  u.uBed.value.set(look.bed);
+  u.uBedAccent.value.set(look.bedAccent);
+}
+
+export function applyGroundSeason(mat: THREE.Material, s: SeasonLook, rain: number) {
+  const u = mat.userData.uniforms;
+  u.uSnow.value = s.snow;
+  u.uLeaves.value = s.leaves;
+  u.uGrass.value.set(...s.grass);
+  u.uRain.value = rain;
+}
+
 /** Flat ground (large plane) with the puddle cut out. */
 export function createGround(material: THREE.Material) {
-  const geo = new THREE.PlaneGeometry(6000, 6000, 1, 1);
+  const geo = new THREE.PlaneGeometry(6000, 6000, 120, 120);
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, material);
   mesh.receiveShadow = true;
@@ -180,15 +275,18 @@ export function createBed(solver: ShallowWaterSolver, material: THREE.Material) 
   const sx = Math.ceil(W / 0.009), sz = Math.ceil(D / 0.009);
   const geo = new THREE.PlaneGeometry(W, D, sx, sz);
   geo.rotateX(-Math.PI / 2);
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const data = solver.shape.data;
-  for (let k = 0; k < pos.count; k++) {
-    const x = pos.getX(k) + ox + ex / 2;
-    const z = pos.getZ(k) + oz + ez / 2;
-    pos.setXYZ(k, x, -bilinear(data, nx, nz, (x - ox) / ex * nx - 0.5, (z - oz) / ez * nz - 0.5), z);
-  }
-  geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material);
   mesh.receiveShadow = true;
-  return mesh;
+  const update = () => {
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const data = solver.shape.data;
+    for (let k = 0; k < pos.count; k++) {
+      const x = pos.getX(k), z = pos.getZ(k);
+      pos.setY(k, -bilinear(data, nx, nz, (x - ox) / ex * nx - 0.5, (z - oz) / ez * nz - 0.5));
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  };
+  update();
+  return { mesh, update };
 }

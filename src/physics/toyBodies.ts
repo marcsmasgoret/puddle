@@ -60,6 +60,9 @@ export const SAIL = {
 
 export const BOBBER = { r: 0.012, mass: 0.0036, com: new THREE.Vector3(0, -0.003, 0) };
 
+/** area each toy shows to the wind above the water [m²] (sail + hull side) */
+export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003 };
+
 export function bodyDef(kind: ToyKind): BodyDef {
   if (kind === 'bobber') {
     const { r, mass, com } = BOBBER;

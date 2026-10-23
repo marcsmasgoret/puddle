@@ -54,7 +54,7 @@ export interface Impulse {
 
 export class ShallowWaterSolver {
   readonly grid: Grid;
-  readonly shape: PuddleShape;
+  shape: PuddleShape;
   fluid: FluidProperties;
   gravity = GRAVITY;
   /** extra linear damping [1/s]; 0 = purely physical damping */
@@ -80,6 +80,7 @@ export class ShallowWaterSolver {
   private surfaceMat: THREE.ShaderMaterial;
   private pending: Impulse[] = [];
   readonly pressureMap: PressureMap;
+  private noIce: THREE.DataTexture;
   private loads: Load[] = [];
   private maxDepth: number;
 
@@ -90,6 +91,8 @@ export class ShallowWaterSolver {
     this.fluid = fluid;
     const { nx, nz } = this.grid;
     this.pressureMap = new PressureMap(nx, nz, this.origin, this.extent);
+    this.noIce = new THREE.DataTexture(new Uint8Array(nx * nz * 4), nx, nz);
+    this.noIce.needsUpdate = true;
 
     // Full 32-bit floats for the simulation state where the GPU can render to
     // them (needed for millimetre-scale heights accumulating tiny updates);
@@ -151,6 +154,9 @@ export class ShallowWaterSolver {
       uG: { value: this.gravity },
       uSigmaRho: { value: 0 },
       uPressure: { value: this.pressureMap.target.texture },
+      uIce: { value: this.noIce },
+      uWindStress: { value: new THREE.Vector2() },
+      uIceDrag: { value: 400 },
       ...this.rheoUniforms(),
       uOmegaRef: { value: OMEGA_REF },
       uHMin: { value: H_MIN },
@@ -179,6 +185,23 @@ export class ShallowWaterSolver {
     };
   }
 
+  /** New puddle outline and floor (same grid). The surface starts calm. */
+  setShape(shape: PuddleShape) {
+    this.shape = shape;
+    (this.shapeSim.image.data as Float32Array).set(shape.data);
+    this.shapeSim.needsUpdate = true;
+    const half = this.shapeTexture.image.data as Uint16Array;
+    this.maxDepth = 0;
+    for (let k = 0; k < this.grid.nx * this.grid.nz; k++) {
+      const H = shape.data[k * 4];
+      this.maxDepth = Math.max(this.maxDepth, H);
+      half[k * 4] = THREE.DataUtils.toHalfFloat(shape.data[k * 4 + 1]);
+      half[k * 4 + 1] = THREE.DataUtils.toHalfFloat(H);
+    }
+    this.shapeTexture.needsUpdate = true;
+    this.reset();
+  }
+
   /** Switch fluid: new properties, and the puddle starts calm. */
   setFluid(f: FluidProperties) {
     this.fluid = f;
@@ -203,6 +226,22 @@ export class ShallowWaterSolver {
     this.renderer.setRenderTarget(null);
     this.renderer.setClearColor(prev, prevA);
     this.pending.length = 0;
+  }
+
+  /** Ice cover texture (grid-sized, R = 0…1), or null for none. */
+  setIce(tex: THREE.Texture | null) {
+    this.velocityMat.uniforms.uIce.value = tex ?? this.noIce;
+  }
+
+  /**
+   * Mean wind over the water. Surface stress τ = ρ_air C_D U² along the
+   * wind, with C_D ≈ 1.3×10⁻³ (the standard neutral drag coefficient for a
+   * smooth water surface at these speeds). Passed to the solver as τ/ρ.
+   */
+  setWind(ux: number, uz: number) {
+    const U = Math.hypot(ux, uz);
+    const k = (1.2 * 1.3e-3 * U) / this.fluid.density;
+    (this.velocityMat.uniforms.uWindStress.value as THREE.Vector2).set(k * ux, k * uz);
   }
 
   /** Pressure loads on the surface this frame (held fingers, floating bodies). */

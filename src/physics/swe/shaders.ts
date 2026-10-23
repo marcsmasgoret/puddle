@@ -88,6 +88,9 @@ uniform float uUMax;      // velocity safety clamp [m/s]
 uniform float uExtraDamp; // optional extra linear damping [1/s] (engineering slider)
 uniform float uCs;        // Smagorinsky constant (≈ 0.17)
 uniform sampler2D uPressure; // surface pressure p/ρ from fingers and floating bodies (pressureMap.ts)
+uniform sampler2D uIce;      // ice cover 0…1 (winter): a rigid lid where present
+uniform vec2 uWindStress;    // mean wind stress τ/ρ [m²/s²]: τ = ρ_air C_D U²
+uniform float uIceDrag;      // extra damping under ice [1/s]
 
 // Discrete Laplacian of η at a cell, ∇²η ≈ (Σ neighbours − 4η)/dx².
 float lapEta(ivec2 c) {
@@ -184,11 +187,17 @@ void main() {
     float lapU = (S(c + ivec2(1, 0)).g + S(W).g + S(c + ivec2(0, 1)).g + S(Sth).g - 4.0 * s.g) / (uDx * uDx);
     float viscous = min(nu + nuTurb, nuCap) * lapU;
 
-    u += uDt * (gravity + pressure + capillary + viscous);
+    // wind drags the surface; spread over the layer it accelerates the
+    // depth-averaged flow by τ/(ρh) (zero under ice)
+    float iceU = max(texelFetch(uIce, c, 0).r, texelFetch(uIce, W, 0).r);
+    float wind = uWindStress.x / max(hFace, uHMin) * (1.0 - iceU);
+    u += uDt * (gravity + pressure + capillary + viscous + wind);
 
     // bottom friction, implicit: (u_new − u)/dt = −c_f u_new  ⇒  u_new = u/(1 + c_f dt).
     // Unconditionally stable even when c_f is huge (honey, jammed oobleck).
-    u /= 1.0 + uDt * frictionRate(hFace, nu);
+    // A layer of ice is a rigid lid: a second no-slip surface that kills
+    // the flow beneath it.
+    u /= 1.0 + uDt * (frictionRate(hFace, nu) + uIceDrag * iceU);
     // safety cap on speed, applied to the velocity *vector* so it has no
     // preferred direction (clamping u and v separately would favour the grid
     // diagonals and turn round waves square)
@@ -212,8 +221,10 @@ void main() {
     float lapV = (S(c + ivec2(1, 0)).b + S(c - ivec2(1, 0)).b + S(c + ivec2(0, 1)).b + S(Sth).b - 4.0 * s.b) / (uDx * uDx);
     float viscous = min(nu + nuTurb, nuCap) * lapV;
 
-    v += uDt * (gravity + pressure + capillary + viscous);
-    v /= 1.0 + uDt * frictionRate(hFace, nu);
+    float iceV = max(texelFetch(uIce, c, 0).r, texelFetch(uIce, Sth, 0).r);
+    float windV = uWindStress.y / max(hFace, uHMin) * (1.0 - iceV);
+    v += uDt * (gravity + pressure + capillary + viscous + windV);
+    v /= 1.0 + uDt * (frictionRate(hFace, nu) + uIceDrag * iceV);
     float sp = length(vec2(uHere, v));
     vNew = sp > uUMax ? v * uUMax / sp : v;
   }

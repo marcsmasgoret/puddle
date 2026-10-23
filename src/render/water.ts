@@ -62,6 +62,8 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
     uAlbedo: { value: new THREE.Color() },
     uExtinction: { value: 0 },
     uMeniscus: { value: 0 },
+    uIce: { value: null as THREE.Texture | null },
+    uIceOn: { value: 0 },
     // recent impacts on a shear-thickening fluid: (x, z, R, strength 0…1)
     uJamMarks: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
   };
@@ -81,7 +83,8 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
       }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uSurface, uShape, uSceneColor, uSceneDepth, uReflection;
+      uniform sampler2D uSurface, uShape, uSceneColor, uSceneDepth, uReflection, uIce;
+      uniform float uIceOn;
       uniform mat4 projectionMatrix;
       uniform vec2 uOrigin, uExtent, uResolution, uTexel;
       uniform mat4 uReflMatrix;
@@ -225,6 +228,24 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           float F = fresnel(cosV, uIor);
           float spec = min(D * fresnel(max(dot(V, Hv), 0.0), uIor) * geom, 80.0);
           col = mix(refr, refl, F) + uSunColor * spec * NdL;
+        }
+
+        // ice skim: flat, pale and glassy, with white fracture lines where it
+        // has been cracked; a sharp mirror sheen at grazing angles
+        if (uIceOn > 0.5) {
+          vec2 ic = texture2D(uIce, vUv).rg;
+          if (ic.r > 0.01) {
+            vec3 up = vec3(0.0, 1.0, 0.0);
+            float cv = clamp(dot(up, V), 0.0, 1.0);
+            vec4 rf = uReflMatrix * vec4(vWPos + reflect(-V, up) * 8.0, 1.0);
+            vec3 flatRefl = texture2D(uReflection, clamp(rf.xy / rf.w * 0.5 + 0.5, 0.001, 0.999)).rgb;
+            vec3 frost = vec3(0.84, 0.9, 0.96) * (uAmbient * 0.55 + uSunColor * max(uSunDir.y, 0.0) * 0.25);
+            vec3 iceCol = mix(mix(direct, frost, 0.55), flatRefl, fresnel(cv, 1.31));
+            vec3 v = voronoi(vWPos.xz * 22.0);
+            float line = smoothstep(0.06, 0.0, v.y - v.x) * ic.g;
+            iceCol = mix(iceCol, vec3(0.97, 0.99, 1.0) * (uAmbient * 0.8 + uSunColor * 0.2), line * 0.8);
+            col = mix(col, iceCol, smoothstep(0.0, 0.6, ic.r));
+          }
         }
 
         // shoreline: the film thins to nothing, blend into the ground

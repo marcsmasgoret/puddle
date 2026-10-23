@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FLUIDS, type FluidId, type FluidProperties } from './physics/fluids';
+import { FLUIDS, HOT_WATER, type FluidId, type FluidProperties } from './physics/fluids';
 import { makeGrid, pickResolution } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
 import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
@@ -8,6 +8,7 @@ import type { Load } from './physics/pressureMap';
 import { computeSlap, handSpeed } from './physics/slap';
 import { stirImpulses } from './physics/stir';
 import { Droplets } from './physics/droplets';
+import { WINDAGE } from './physics/toyBodies';
 import { createDropletMesh } from './render/droplets';
 import { WetMap } from './render/wetmap';
 import { createPanel } from './ui/panel';
@@ -21,12 +22,14 @@ import { toast } from './ui/toast';
 import { settings, saveSettings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
-import { createGroundMaterial, createGround, createBed, applyGroundFluid, FOREST_GROUND } from './render/ground';
-import { PuddleRenderer, LAYER_REFLECT } from './render/pipeline';
-import { createSky, LATE_AFTERNOON, sunDirection } from './scene/atmosphere';
-import { buildForest } from './scene/forest';
+import { createGroundMaterial, createGround, createBed, applyGroundFluid } from './render/ground';
+import { PuddleRenderer } from './render/pipeline';
 import { frameCamera } from './scene/framing';
 import { attachPointer } from './interaction/pointer';
+import { World } from './scene/world/world';
+import { LOCATIONS, type LocationId } from './scene/world/location';
+import type { Season, TimeOfDay, Weather } from './scene/world/palettes';
+import type { Waters } from './scene/world/props';
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -38,60 +41,28 @@ renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.shadowMap.autoUpdate = false;
 
 const phoneish = navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 900;
-const palette = LATE_AFTERNOON;
-let fluid: FluidProperties = FLUIDS[settings.fluid] ?? FLUIDS.water;
+/** the fluid chosen in the panel (the hot tub swaps water for 38 °C water) */
+let chosenFluid: FluidProperties = FLUIDS[settings.fluid] ?? FLUIDS.water;
+let fluid: FluidProperties = chosenFluid;
 
 // ── physics ──────────────────────────────────────────────────────────────────
 const grid = makeGrid(pickResolution());
-const shape = buildPuddle(grid);
-const solver = new ShallowWaterSolver(renderer, shape, fluid);
+const solver = new ShallowWaterSolver(renderer, buildPuddle(grid), fluid);
 const caustics = new Caustics(solver, 1.333, phoneish ? 1 : 2);
 
 // ── scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(palette.haze, 25, 260);
 const camera = new THREE.PerspectiveCamera(46, 1, 0.05, 1200);
 
-const sky = createSky(palette);
-sky.mesh.layers.enable(LAYER_REFLECT);
-scene.add(sky.mesh);
-
-const sunDir = sunDirection(palette);
-const sun = new THREE.DirectionalLight(palette.sunColor, palette.sunIntensity);
-sun.position.copy(sunDir).multiplyScalar(60);
-sun.castShadow = true;
-sun.shadow.mapSize.set(phoneish ? 1024 : 2048, phoneish ? 1024 : 2048);
-const sc = sun.shadow.camera;
-sc.left = -22; sc.right = 22; sc.top = 22; sc.bottom = -22; sc.near = 1; sc.far = 120;
-sun.shadow.bias = -0.0004;
-sun.shadow.normalBias = 0.02;
-sun.shadow.radius = 4;
-scene.add(sun, sun.target);
-const hemi = new THREE.HemisphereLight(palette.hemiSky, palette.hemiGround, palette.hemiIntensity);
-hemi.layers.enable(LAYER_REFLECT);
-sun.layers.enable(LAYER_REFLECT);
-scene.add(hemi);
-
-// sky-lit environment for glossy surfaces (wet ground, rocks)
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envScene = new THREE.Scene();
-envScene.add(createSky(palette).mesh);
-scene.environment = pmrem.fromScene(envScene, 0.02).texture;
-scene.environmentIntensity = 0.6;
-
 const wetMap = new WetMap();
-const groundMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, false);
-const bedMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, true);
+const groundMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, false);
+const bedMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, true);
 const groundMesh = createGround(groundMat);
-const bedMesh = createBed(solver, bedMat);
-scene.add(groundMesh, bedMesh);
-buildForest(scene, palette, [shape.halfX, shape.halfZ], (x, z) => solver.sdfAt(x, z));
+const bed = createBed(solver, bedMat);
+scene.add(groundMesh, bed.mesh);
 
 const waterScene = new THREE.Scene();
 const water = createWaterMesh(solver);
-water.uniforms.uSunDir.value.copy(sunDir);
-water.uniforms.uSunColor.value.copy(palette.sunColor).multiplyScalar(palette.sunIntensity);
-water.uniforms.uAmbient.value.copy(palette.hemiSky).multiplyScalar(palette.hemiIntensity);
 waterScene.add(water.mesh);
 
 const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
@@ -105,16 +76,62 @@ const towardWater = (x: number, z: number): [number, number] => {
 };
 const drops = new Droplets(fluid, isWater, towardWater);
 const dropMesh = createDropletMesh(drops, water.uniforms);
-dropMesh.material.uniforms.uSkyTop.value.copy(palette.skyTop);
-dropMesh.material.uniforms.uSkyHorizon.value.copy(palette.skyHorizon);
 waterScene.add(dropMesh.mesh);
 
 const pipeline = new PuddleRenderer(renderer, scene, waterScene, camera, water.uniforms, phoneish ? 0 : 4);
 
+/**
+ * A falling drop of radius r hitting the water at speed v hands its momentum
+ * m·v to the surface as a pressure impulse over a footprint a few drop radii
+ * wide (never narrower than the grid can resolve), and adds its volume.
+ */
+function dropImpact(x: number, z: number, r: number, v: number): Impulse {
+  const volume = (4 / 3) * Math.PI * r ** 3;
+  const R = Math.max(2.5 * r, 1.5 * grid.dx);
+  return { x, z, radius: R, pressureImpulse: (fluid.density * volume * v) / (Math.PI * R * R), volume };
+}
+
+// ── the world: location, season, time of day, weather ───────────────────────
+const waters: Waters = {
+  reflection: { texture: water.uniforms.uReflection.value as THREE.Texture, matrix: water.uniforms.uReflMatrix.value as THREE.Matrix4 },
+  time: { value: 0 },
+  resolution: new THREE.Vector2(),
+};
+const world = new World(
+  scene,
+  renderer,
+  solver,
+  waters,
+  {
+    groundMaterials: [groundMat, bedMat],
+    onShapeChanged() {
+      bed.update();
+      resize();
+    },
+    onHotTub(on) {
+      applyFluid(chosenFluid, on);
+      if (on) toast('the pool is a hot tub for the winter <small>· 38 °C</small>', 3500);
+    },
+  },
+  { location: settings.location, season: settings.season, time: settings.time, weather: settings.weather },
+  phoneish,
+  (x, z, r, v) => solver.addImpulse(dropImpact(x, z, r, v)),
+);
+
+/** lighting changed: pass the sun and sky to the hand-written shaders */
+function syncMood() {
+  const m = world.env.mood;
+  water.uniforms.uSunDir.value.copy(world.env.sunDir);
+  water.uniforms.uSunColor.value.copy(m.sunColor).multiplyScalar(m.sunIntensity);
+  water.uniforms.uAmbient.value.copy(m.hemiSky).multiplyScalar(m.hemiIntensity);
+  dropMesh.material.uniforms.uSkyTop.value.copy(m.skyTop);
+  dropMesh.material.uniforms.uSkyHorizon.value.copy(m.skyHorizon);
+}
+
 // ── layout ───────────────────────────────────────────────────────────────────
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  const f = frameCamera(shape.outline, w / h);
+  const f = frameCamera(solver.shape.outline, w / h);
   camera.fov = f.fov;
   camera.aspect = w / h;
   camera.position.copy(f.position);
@@ -144,10 +161,20 @@ const toys = new Toys(scene, solver, renderer, camera, {
 // ── skipping stones ──────────────────────────────────────────────────────────
 const stones = new Stones(
   scene,
-  { isFluid: isWater, floorAt: (x, z) => toys.floorAt(x, z), halfX: shape.halfX, halfZ: shape.halfZ },
+  {
+    isFluid: isWater,
+    floorAt: (x, z) => toys.floorAt(x, z),
+    get halfX() {
+      return solver.shape.halfX;
+    },
+    get halfZ() {
+      return solver.shape.halfZ;
+    },
+  },
   (e) => {
     if (!isWater(e.x, e.z)) return;
     const R = Math.max(STONE.radius * 1.5, 1.5 * grid.dx);
+    world.ice.breakAt(e.x, e.z, 0.08);
     if (e.kind === 'clatter') {
       // a jammed impact on oobleck: a brief matte patch, no spray
       jamMarks.unshift({ x: e.x, z: e.z, t: solver.simTime, s: 0.8 });
@@ -203,8 +230,8 @@ const drawer = createDrawer({
   onTap(kind) {
     // drop it from a hand's height somewhere over the water
     for (let k = 0; k < 30; k++) {
-      const x = (Math.random() * 2 - 1) * shape.halfX * 0.6;
-      const z = (Math.random() * 2 - 1) * shape.halfZ * 0.6;
+      const x = (Math.random() * 2 - 1) * solver.shape.halfX * 0.6;
+      const z = (Math.random() * 2 - 1) * solver.shape.halfZ * 0.6;
       if (solver.sdfAt(x, z) < -0.12) {
         toys.spawn(kind, new THREE.Vector3(x, 0.3, z));
         return;
@@ -213,17 +240,6 @@ const drawer = createDrawer({
   },
   onClear: () => toys.clear(),
 });
-
-/**
- * A falling drop of radius r hitting the water at speed v hands its momentum
- * m·v to the surface as a pressure impulse over a footprint a few drop radii
- * wide (never narrower than the grid can resolve), and adds its volume.
- */
-function dropImpact(x: number, z: number, r: number, v: number): Impulse {
-  const volume = (4 / 3) * Math.PI * r ** 3;
-  const R = Math.max(2.5 * r, 1.5 * grid.dx);
-  return { x, z, radius: R, pressureImpulse: (fluid.density * volume * v) / (Math.PI * R * R), volume };
-}
 
 let lastSlap = { froude: 0, sprayMl: 0 };
 // recent impacts on oobleck, for the brief matte "jammed" patch they leave
@@ -239,6 +255,8 @@ function updateJamMarks() {
 }
 
 function slapAt(x: number, z: number) {
+  // a slap shatters any ice within reach of the hand
+  world.ice.breakAt(x, z, 0.08 + settings.strength * 0.14);
   if (fluid.rheology.kind === 'shearThickening') {
     jamMarks.unshift({ x, z, t: solver.simTime, s: Math.min(1, 0.4 + settings.strength) });
     jamMarks.length = Math.min(jamMarks.length, 4);
@@ -304,14 +322,16 @@ function updateDrops(dt: number) {
   dropMesh.update();
 }
 
-// gentle ambient life: an occasional drip from the trees
+// gentle ambient life: an occasional drip from overhanging trees
 let nextDrip = 2 + Math.random() * 4;
 function maybeDrip(t: number) {
   if (t < nextDrip) return;
   nextDrip = t + 5 + Math.random() * 9;
+  const loc = world.config.location;
+  if (loc === 'beach' || loc === 'city' || loc === 'dock' || world.config.weather !== 'clear') return;
   for (let k = 0; k < 20; k++) {
-    const x = (Math.random() * 2 - 1) * shape.halfX;
-    const z = (Math.random() * 2 - 1) * shape.halfZ;
+    const x = (Math.random() * 2 - 1) * solver.shape.halfX;
+    const z = (Math.random() * 2 - 1) * solver.shape.halfZ;
     if (solver.sdfAt(x, z) < -0.08) {
       // a 2.5 mm drop falling a couple of metres arrives at ~5 m/s
       solver.addImpulse(dropImpact(x, z, 0.0025, 5));
@@ -320,9 +340,28 @@ function maybeDrip(t: number) {
   }
 }
 
+// hot tub jets: bubbles rising from jets along the walls and the floor push
+// the surface up and outward in little domes
+let jetDebt = 0;
+function hotTubJets(dt: number) {
+  if (!world.hotTub) return;
+  jetDebt += dt * 14;
+  while (jetDebt >= 1) {
+    jetDebt -= 1;
+    const wall = Math.random() < 0.6;
+    const a = Math.random() * Math.PI * 2;
+    const x = wall ? Math.cos(a) * solver.shape.halfX * 0.85 : (Math.random() - 0.5) * solver.shape.halfX;
+    const z = wall ? Math.sin(a) * solver.shape.halfZ * 0.8 : (Math.random() - 0.5) * solver.shape.halfZ;
+    if (isWater(x, z)) solver.addImpulse({ x, z, radius: 0.025 + Math.random() * 0.02, pressureImpulse: -(1.5 + Math.random() * 2.5) });
+  }
+}
+
 // ── fluids ───────────────────────────────────────────────────────────────────
-function applyFluid(f: FluidProperties) {
+function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
+  chosenFluid = chosen;
+  const f = hot && chosen.id === 'water' ? HOT_WATER : chosen;
   fluid = f;
+  world.updateIce(f.id);
   solver.setFluid(f);
   water.applyFluid(f);
   drops.fluid = f;
@@ -351,7 +390,8 @@ function updateHolds(dt: number) {
   fingerLoads = [...held.values()].map((f) => pressLoad(f, fluid.density, GRAVITY));
 }
 
-panel.addChoice<FluidId>(
+let markFluid: (v: FluidId) => void = () => {};
+markFluid = panel.addChoice<FluidId>(
   'Fluid',
   [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck']],
   () => fluid.id,
@@ -361,13 +401,49 @@ panel.addChoice<FluidId>(
     applyFluid(FLUIDS[id]);
   },
 );
+const pick = <T,>(xs: readonly T[]) => xs[Math.floor(Math.random() * xs.length)];
+const SEASONS: [Season, string][] = [['spring', 'Spring'], ['summer', 'Summer'], ['autumn', 'Autumn'], ['winter', 'Winter']];
+const TIMES: [TimeOfDay, string][] = [['sunrise', 'Sunrise'], ['day', 'Day'], ['sunset', 'Sunset'], ['night', 'Night']];
+const WEATHERS: [Weather, string][] = [['clear', 'Clear'], ['rain', 'Rain'], ['wind', 'Wind'], ['snow', 'Snow']];
+const marks: { [K in 'location' | 'season' | 'time' | 'weather']?: (v: string) => void } = {};
+function setWorld(part: Partial<{ location: LocationId; season: Season; time: TimeOfDay; weather: Weather }>) {
+  Object.assign(settings, part);
+  saveSettings();
+  for (const [k, v] of Object.entries(part)) marks[k as keyof typeof marks]?.(v as string);
+  world.set(part).then(syncMood);
+}
+marks.location = panel.addChoice<LocationId>('Place', LOCATIONS, () => world.config.location, (v) => setWorld({ location: v })) as (v: string) => void;
+marks.season = panel.addChoice<Season>('Season', SEASONS, () => world.config.season, (v) => setWorld({ season: v })) as (v: string) => void;
+marks.time = panel.addChoice<TimeOfDay>('Time', TIMES, () => world.config.time, (v) => setWorld({ time: v })) as (v: string) => void;
+marks.weather = panel.addChoice<Weather>('Weather', WEATHERS, () => world.config.weather, (v) => setWorld({ weather: v })) as (v: string) => void;
+panel.addButtons([
+  [
+    'Shuffle everything',
+    () => {
+      const part = {
+        location: pick(LOCATIONS)[0],
+        season: pick(SEASONS)[0],
+        time: pick(TIMES)[0],
+        weather: pick(WEATHERS)[0],
+      };
+      const f = pick(['water', 'water', 'honey', 'mercury', 'oobleck'] as FluidId[]);
+      settings.fluid = f;
+      applyFluid(FLUIDS[f]);
+      markFluid(f);
+      setWorld(part);
+    },
+  ],
+]);
 panel.addChoice<'slap' | 'skip' | 'fish'>(
   'Play',
   [['slap', 'Slap'], ['skip', 'Skip stones'], ['fish', 'Fishing']],
   () => settings.mode,
   setMode,
 );
-applyFluid(fluid);
+world.ready().then(() => {
+  syncMood();
+  applyFluid(chosenFluid);
+});
 
 document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
 
@@ -382,11 +458,12 @@ let paused = false;
 (window as unknown as { __puddle: unknown }).__puddle = {
   solver,
   camera,
-  shape,
+  world,
+  setWorld,
   water: water.mesh,
   scene,
   groundMesh,
-  bedMesh,
+  bedMesh: bed.mesh,
   causticStats: () => caustics.stats(renderer),
   drops,
   lastSlap: () => lastSlap,
@@ -395,7 +472,10 @@ let paused = false;
     slapAt(x, z);
     return lastSlap;
   },
-  setFluid: (id: FluidId) => applyFluid(FLUIDS[id]),
+  setFluid: (id: FluidId) => {
+    settings.fluid = id;
+    applyFluid(FLUIDS[id]);
+  },
   toys,
   stones,
   fishing,
@@ -419,14 +499,21 @@ renderer.setAnimationLoop(() => {
   maybeDrip(solver.simTime);
   updateHolds(Math.min(dt, 1 / 20));
   updateJamMarks();
-  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY, (t) => fishing.forceFor(t));
+  world.update(Math.min(dt, 1 / 20));
+  hotTubJets(Math.min(dt, 1 / 20));
+  water.uniforms.uIce.value = world.ice.texture;
+  water.uniforms.uIceOn.value = world.ice.enabled ? 1 : 0;
+  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY, (t) => {
+    const f = fishing.forceFor(t) ?? new THREE.Vector3();
+    return f.add(world.weather.windForce(WINDAGE[t.kind]));
+  });
   stones.update(Math.min(dt, 1 / 20), fluid, GRAVITY);
   fishing.update(Math.min(dt, 1 / 20));
-  solver.setLoads([...fingerLoads, ...toyLoads]);
+  solver.setLoads([...fingerLoads, ...toyLoads, ...world.weather.loads()]);
   updateDrops(Math.min(dt, 1 / 20));
   solver.step(dt);
   wetMap.update(renderer, Math.min(dt, 1 / 20));
-  caustics.update(renderer, sunDir);
+  caustics.update(renderer, world.env.sunDir);
   pipeline.render(dt);
   stats.fps = Math.round(fps);
   stats.substeps = solver.lastPlan?.substeps ?? 0;

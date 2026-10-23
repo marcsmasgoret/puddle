@@ -227,6 +227,18 @@ export const OOBLECK: FluidProperties = {
   ],
 };
 
+/**
+ * Hot-tub water at 38 °C (IAPWS formulations): warmer water is a little
+ * less dense, about a third less viscous and has lower surface tension, so
+ * its ripples live slightly longer.
+ */
+export const HOT_WATER: FluidProperties = {
+  ...WATER,
+  density: 992.96,
+  viscosity: 0.681e-3,
+  surfaceTension: 69.9e-3,
+};
+
 export const FLUIDS = { water: WATER, honey: HONEY, mercury: MERCURY, oobleck: OOBLECK };
 export type FluidId = keyof typeof FLUIDS;
 

@@ -1,6 +1,8 @@
 // User settings, remembered between visits (localStorage, failing silently
 // in private windows).
 import type { FluidId } from '../physics/fluids';
+import type { LocationId } from '../scene/world/location';
+import type { Season, TimeOfDay, Weather } from '../scene/world/palettes';
 
 const KEY = 'puddle.settings.v1';
 
@@ -12,9 +14,23 @@ export interface Settings {
   /** best skip count per fluid */
   best: Partial<Record<FluidId, number>>;
   hintsSeen: string[];
+  location: LocationId;
+  season: Season;
+  time: TimeOfDay;
+  weather: Weather;
 }
 
-const defaults: Settings = { strength: 0.35, fluid: 'water', mode: 'slap', best: {}, hintsSeen: [] };
+const defaults: Settings = {
+  strength: 0.35,
+  fluid: 'water',
+  mode: 'slap',
+  best: {},
+  hintsSeen: [],
+  location: 'forest',
+  season: 'summer',
+  time: 'day',
+  weather: 'clear',
+};
 
 function load(): Settings {
   try {

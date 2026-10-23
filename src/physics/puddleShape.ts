@@ -46,24 +46,53 @@ function mulberry32(seed: number) {
  */
 export const BOWL_DEPTH = 0.025;
 
-export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, seed = 7): PuddleShape {
-  const rand = mulberry32(seed);
+/**
+ * Outline of the puddle: an organic blob (random Fourier harmonics on an
+ * ellipse) or, for the backyard pool / hot tub, a rounded rectangle with
+ * steep walls.
+ */
+export type ShapeSpec =
+  | { kind: 'blob'; seed: number; rx?: number; rz?: number; wobble?: number }
+  | { kind: 'roundRect'; hw: number; hd: number; r: number };
 
-  // ── outline r(θ) = 1 + Σ aₖ sin(kθ + φₖ), stretched to an ellipse ──
-  const harmonics = [2, 3, 4, 5, 7].map((k) => ({
-    k,
-    a: (0.11 / k ** 0.8) * (0.5 + rand()),
-    phase: rand() * Math.PI * 2,
-  }));
-  const RX = 0.98;
-  const RZ = 0.66;
+export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, spec: ShapeSpec = { kind: 'blob', seed: 7 }): PuddleShape {
+  const rand = mulberry32(spec.kind === 'blob' ? spec.seed : 1);
   const N = 256;
   const outline: [number, number][] = [];
-  for (let n = 0; n < N; n++) {
-    const th = (n / N) * Math.PI * 2;
-    let r = 1;
-    for (const h of harmonics) r += h.a * Math.sin(h.k * th + h.phase);
-    outline.push([Math.cos(th) * r * RX, Math.sin(th) * r * RZ]);
+  if (spec.kind === 'blob') {
+    // ── outline r(θ) = 1 + Σ aₖ sin(kθ + φₖ), stretched to an ellipse ──
+    const wob = spec.wobble ?? 1;
+    const harmonics = [2, 3, 4, 5, 7].map((k) => ({
+      k,
+      a: ((0.11 * wob) / k ** 0.8) * (0.5 + rand()),
+      phase: rand() * Math.PI * 2,
+    }));
+    const RX = spec.rx ?? 0.98;
+    const RZ = spec.rz ?? 0.66;
+    for (let n = 0; n < N; n++) {
+      const th = (n / N) * Math.PI * 2;
+      let r = 1;
+      for (const h of harmonics) r += h.a * Math.sin(h.k * th + h.phase);
+      outline.push([Math.cos(th) * r * RX, Math.sin(th) * r * RZ]);
+    }
+  } else {
+    // rounded rectangle traced at constant angular spacing of its perimeter
+    const { hw, hd, r } = spec;
+    for (let n = 0; n < N; n++) {
+      const th = (n / N) * Math.PI * 2;
+      const dx = Math.cos(th), dz = Math.sin(th);
+      // march out along the ray until we leave the rounded rectangle
+      let t = 0;
+      for (let step = 0.5; step > 1e-4; step /= 2) {
+        while (true) {
+          const x = Math.abs(dx * (t + step)) - (hw - r), z = Math.abs(dz * (t + step)) - (hd - r);
+          const d = Math.hypot(Math.max(x, 0), Math.max(z, 0)) + Math.min(Math.max(x, z), 0) - r;
+          if (d > 0) break;
+          t += step;
+        }
+      }
+      outline.push([dx * t, dz * t]);
+    }
   }
   let halfX = 0;
   let halfZ = 0;
@@ -122,11 +151,15 @@ export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, seed = 7): Puddl
       let H = 0;
       if (sdf < 0) {
         const inward = -sdf;
-        const saucer = Math.pow(Math.min(inward / 0.32, 1), 0.75);
+        // natural puddles are shallow saucers; a pool has a short steep wall
+        const ramp = spec.kind === 'roundRect' ? 0.04 : 0.32;
+        const saucer = Math.pow(Math.min(inward / ramp, 1), spec.kind === 'roundRect' ? 1 : 0.75);
         let lump = 0;
-        for (const L of floorLumps) {
-          const q = ((x - L.x) ** 2 + (z - L.z) ** 2) / (L.r * L.r);
-          lump += L.h * Math.exp(-q);
+        if (spec.kind === 'blob') {
+          for (const L of floorLumps) {
+            const q = ((x - L.x) ** 2 + (z - L.z) ** 2) / (L.r * L.r);
+            lump += L.h * Math.exp(-q);
+          }
         }
         H = Math.max(0.001, restDepth * saucer * (1 + lump));
       }
