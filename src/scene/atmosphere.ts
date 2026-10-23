@@ -78,25 +78,61 @@ export function createSky(p: Palette) {
         vec3 horizon = mix(uHorizon, uHorizon * vec3(1.08, 0.98, 0.9), pow(s, 4.0) * (1.0 - uNight));
         vec3 col = mix(horizon, uTop, pow(smoothstep(0.0, 0.4, y), 0.6));
         if (d.y < 0.0) col = horizon;
-        // stars: sparse hashed points, twinkling, fading toward the horizon
+        // stars: three layers (bright twinklers, many fainter ones, a fine
+        // dust), slightly coloured by temperature, and the Milky Way as a
+        // soft band across the sky; all fade into the horizon haze
         if (uNight > 0.0) {
-          vec2 sp = d.xz / max(d.y + 0.15, 0.05) * 140.0;
-          vec2 cell = floor(sp);
-          float h = hash12(cell);
-          vec2 o = hash22(cell) - 0.5;
-          float star = smoothstep(0.08, 0.0, length(fract(sp) - 0.5 - o * 0.6)) * step(0.985, h);
-          star *= 0.6 + 0.4 * sin(uTime * (1.5 + 3.0 * h) + h * 40.0);
-          col += vec3(0.9, 0.95, 1.0) * star * uNight * smoothstep(0.05, 0.3, y) * (1.0 - uOvercast);
+          float vis = uNight * smoothstep(0.02, 0.25, y) * (1.0 - uOvercast);
+          vec2 base = d.xz / max(d.y + 0.25, 0.05);
+          vec3 stars = vec3(0.0);
+          for (int L = 0; L < 3; L++) {
+            float scale = L == 0 ? 90.0 : L == 1 ? 190.0 : 380.0;
+            float keep = L == 0 ? 0.982 : L == 1 ? 0.94 : 0.86;
+            float bright = L == 0 ? 1.6 : L == 1 ? 0.55 : 0.22;
+            vec2 sp = base * scale + float(L) * 17.0;
+            vec2 cell = floor(sp);
+            float h = hash12(cell);
+            vec2 o = hash22(cell) - 0.5;
+            float r = length(fract(sp) - 0.5 - o * 0.6);
+            float st = smoothstep(L == 0 ? 0.12 : 0.09, 0.0, r) * step(keep, h);
+            st *= 0.7 + 0.3 * sin(uTime * (1.5 + 3.0 * h) + h * 40.0);
+            vec3 tint = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.88, 0.72), fract(h * 37.0));
+            stars += tint * st * bright;
+          }
+          // the Milky Way: a broad, mottled glow along a great circle
+          vec3 mwAxis = normalize(vec3(0.35, 0.25, 0.9));
+          float band = exp(-pow(dot(d, mwAxis) / 0.2, 2.0));
+          float dust = fbm(base * 3.0) * 0.7 + fbm(base * 9.0) * 0.3;
+          vec3 milky = vec3(0.55, 0.6, 0.8) * band * (0.08 + 0.12 * dust) * smoothstep(0.35, 0.7, dust + band * 0.3);
+          col += (stars * (0.6 + 0.6 * band) + milky) * vis;
         }
         // soft stratus streaks, projected on a high flat layer
         vec2 cp = d.xz / max(d.y + 0.08, 0.02) * 0.6;
         float c = fbm(cp * vec2(0.6, 2.2) + vec2(3.0 + uTime * 0.004, 1.0));
         c = smoothstep(0.62 - 0.3 * uCloudAmount, 0.95, c) * smoothstep(0.0, 0.12, d.y) * (1.0 - smoothstep(0.35, 0.8, d.y));
         col = mix(col, uCloud * (1.0 + 0.5 * pow(s, 3.0)), c * 0.55 * (1.0 - uOvercast));
-        // sun by day (HDR disc that blooms) or a small, cool moon by night
-        float disc = mix(smoothstep(0.9994, 0.9997, s) * 30.0, smoothstep(0.99955, 0.9997, s) * 6.0, uNight);
-        float glow = mix(pow(s, 64.0) * 0.6 + pow(s, 6.0) * 0.18, pow(s, 200.0) * 0.4, uNight);
-        col += uSunColor * (disc + glow) * (1.0 - 0.9 * uOvercast);
+        // sun by day (HDR disc that blooms); by night the moon: a disc with
+        // its dark maria, a soft halo, and moonlight across the sky
+        if (uNight < 0.5) {
+          float disc = smoothstep(0.9994, 0.9997, s) * 30.0;
+          float glow = pow(s, 64.0) * 0.6 + pow(s, 6.0) * 0.18;
+          col += uSunColor * (disc + glow) * (1.0 - 0.9 * uOvercast);
+        } else {
+          float ang = acos(clamp(s, -1.0, 1.0));
+          float R = 0.026;                    // drawn ~3° across: larger than life, as the eye sees it low on the horizon
+          float inDisc = smoothstep(R, R * 0.93, ang);
+          // the disc's own coordinates, for the maria
+          vec3 up = vec3(0.0, 1.0, 0.0);
+          vec3 ax = normalize(cross(up, uSunDir));
+          vec3 ay = cross(uSunDir, ax);
+          vec2 m = vec2(dot(d, ax), dot(d, ay)) / R;
+          float maria = smoothstep(0.45, 0.7, fbm(m * 2.2 + 3.0)) * 0.35 + smoothstep(0.6, 0.8, fbm(m * 5.0 + 9.0)) * 0.15;
+          float limb = 0.82 + 0.18 * sqrt(max(0.0, 1.0 - dot(m, m)));
+          vec3 moon = vec3(1.0, 0.98, 0.92) * (1.0 - maria) * limb * 3.2;
+          float halo = exp(-ang / 0.06) * 0.35 + exp(-ang / 0.25) * 0.08;
+          col = mix(col, moon, inDisc * (1.0 - 0.95 * uOvercast));
+          col += uSunColor * halo * (1.0 - inDisc) * (1.0 - 0.8 * uOvercast);
+        }
         gl_FragColor = vec4(col, 1.0);
       }`,
   });

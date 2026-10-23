@@ -3,7 +3,7 @@
 // towers in the distance. Windows and lamps light up at night.
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
-import { ridge, hazed, rng, reflective, broadleaves } from '../props';
+import { cnTower, nightLights, windowLights, ridge, hazed, rng, reflective, broadleaves } from '../props';
 
 /** facade material: muted wall colour with a grid of windows, lit at night */
 function facade(color: string, night: number, seed: number) {
@@ -137,6 +137,27 @@ const def: LocationDef = {
         },
       }),
     );
+    // downtown at night: lit windows across the distant towers
+    if (night > 0) {
+      const rects: [number, number, number, number, number][] = [];
+      for (let k = 0; k < 900 / 22; k++) {
+        const rr = Math.abs(Math.sin(k * 12.9898) * 43758.5453) % 1;
+        if (rr <= 0.35) continue;
+        const x = k * 22 - 450;
+        rects.push([x + 2, x + 20, 3, 20 + rr * 90 - 2, -257]);
+      }
+      g.add(nightLights(windowLights(rects, 3.6, 0.32, 11), night, { size: 1.8, gain: 1.1 }));
+    }
+    // and the CN Tower, ~3 km off at the end of the cross street (drawn at
+    // 900 m and scaled so it subtends the true angle)
+    {
+      const cnMat = new THREE.MeshBasicMaterial({ color: hazed('#6b7484', haze, 3000, 4000).lerp(new THREE.Color('#1b2233'), night * 0.7), fog: false });
+      const cnGlow = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffb070').multiplyScalar(0.2 + night * 2), fog: false });
+      const cn = cnTower(cnMat, cnGlow, night);
+      cn.scale.setScalar(900 / 3000);
+      cn.position.set(40, 0, -900);
+      g.add(reflective(cn));
+    }
     // streetlamps along the sidewalk
     const pole = new THREE.MeshStandardMaterial({ color: '#2b2e33', roughness: 0.5, metalness: 0.4 });
     const bulb = new THREE.MeshStandardMaterial({ color: '#fff2d0', emissive: new THREE.Color('#ffd28a'), emissiveIntensity: night * 6 + 0.2 });

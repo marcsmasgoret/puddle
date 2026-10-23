@@ -1,18 +1,24 @@
 // The secret: now and then (every few minutes, never on a schedule you can
 // count on) a small mouse pops out somewhere fitting for the place, sniffs,
 // and scurries off to a hiding spot. Sometimes a tabby cat has spotted it:
-// it creeps in, crouched low, wiggles its hips, pounces, gives a bounding
+// it creeps in, belly low, wiggles its hips, pounces, gives a bounding
 // chase, and is always just too late. The mouse vanishes into its hole; the
 // cat sits there, puzzled, looks around, and wanders off.
 //
 // Gait notes (from watching cats): a walking cat moves its legs in a lateral
 // sequence (left hind, left fore, right hind, right fore, a quarter cycle
 // apart); stalking is the same gait, slow, with the belly low, head forward
-// and ears up; before the pounce the hindquarters shift side to side to set
-// the hind feet ("the wiggle"); a bound is a gallop with front and hind legs
-// working in pairs while the spine flexes.
+// and tail low; before the pounce the hindquarters shift side to side to set
+// the hind feet ("the wiggle"); a chase is a bound, hind legs then fore legs,
+// with the spine flexing. Mice move in quick trotting dashes with stops.
+//
+// Both animals keep to solid ground: the cat chooses a way in that crosses
+// neither open water nor the puddle (cats don't wade), and walks off the
+// same way.
 import * as THREE from 'three';
-import { buildCat, buildMouse, type CatRig, type MouseRig } from './rigs';
+import { sculpt, prepare } from './sculpt';
+import { catSpec, mouseSpec } from './species';
+import { Quadruped } from './gait';
 import type { Prints } from './prints';
 
 export interface MouseSpots {
@@ -23,105 +29,143 @@ export interface MouseSpots {
 }
 
 const yawTo = (dx: number, dz: number) => Math.atan2(-dz, dx);
-const lerpAngle = (a: number, b: number, k: number) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
 type MouseState = 'hidden' | 'emerge' | 'sniff' | 'scurry' | 'wait' | 'flee' | 'dive';
 type CatState = 'away' | 'walkIn' | 'stalk' | 'wiggle' | 'pounce' | 'bound' | 'sit' | 'wander';
 
 export class MouseCat {
   readonly group = new THREE.Group();
-  private mouse: MouseRig;
-  private cat: CatRig;
+  private mouse: Quadruped | null = null;
+  private cat: Quadruped | null = null;
   private holes: THREE.Mesh[] = [];
   private mounds: THREE.Mesh[] = [];
   private spots: MouseSpots | null = null;
+  private walkable: (x: number, z: number) => boolean = () => true;
   private snowy = false;
   private next = 60 + Math.random() * 120;
   private t = 0;
 
   private mState: MouseState = 'hidden';
   private mTime = 0;
-  private mPos = new THREE.Vector3();
-  private mYaw = 0;
-  private mPhase = 0;
   private waitAt = new THREE.Vector3();
-  private lastPrint = new THREE.Vector3();
+  private sink = 0;
 
   private chase = false;
   private cState: CatState = 'away';
   private cTime = 0;
-  private cPos = new THREE.Vector3();
-  private cYaw = 0;
-  private cPhase = 0;
+  private entry = new THREE.Vector3();
   private leapFrom = new THREE.Vector3();
   private leapTo = new THREE.Vector3();
-  private exitDir = 1;
-  private lastPaw = new THREE.Vector3();
-  private pawSide = 0;
+  private looks: THREE.Vector3[] = [];
 
   constructor(private prints: Prints) {
-    this.mouse = buildMouse();
-    this.cat = buildCat();
-    this.mouse.root.visible = false;
-    this.cat.root.visible = false;
-    this.group.add(this.mouse.root, this.cat.root);
+    // mesh both animals in the background now, so they are ready when needed
+    Promise.all([prepare(catSpec()), prepare(mouseSpec())]).then(() => this.build());
   }
 
-  /** New place or season: where the mouse lives, and whether it is snowy. */
-  configure(spots: MouseSpots | null, snowy: boolean) {
+  private build() {
+    const cs = catSpec(), ms = mouseSpec();
+    this.cat = new Quadruped(sculpt(cs), cs, { cadence: 1.7, cadenceGain: 1.3, height: 0.2, tailCurve: 0.16 });
+    this.mouse = new Quadruped(sculpt(ms), ms, { cadence: 7, cadenceGain: 4, height: 0.02, tailCurve: 0.02 });
+    this.cat.root.visible = this.mouse.root.visible = false;
+    this.group.add(this.cat.root, this.mouse.root);
+    this.cat.onFootDown = (_leg, p) => {
+      if (this.snowy) this.prints.stamp(p.x, p.z, 0.034, 0.04, this.cat!.yaw, 0.95);
+    };
+    this.mouse.onFootDown = (leg, p) => {
+      if (this.snowy && leg[0] === 'h') this.prints.stamp(p.x, p.z, 0.01, 0.012, this.mouse!.yaw, 0.8);
+    };
+  }
+
+  /** New place or season: where the mouse lives, and where it is safe to walk. */
+  configure(spots: MouseSpots | null, snowy: boolean, walkable: (x: number, z: number) => boolean = () => true) {
     this.spots = spots;
     this.snowy = snowy;
+    this.walkable = walkable;
     for (const m of [...this.holes, ...this.mounds]) this.group.remove(m);
     this.holes = [];
     this.mounds = [];
     this.mState = 'hidden';
     this.cState = 'away';
-    this.mouse.root.visible = this.cat.root.visible = false;
+    if (this.cat) this.cat.root.visible = this.mouse!.root.visible = false;
     if (!spots) return;
     const hide = snowy && (spots.hide === 'hole' || spots.hide === 'grass') ? 'snowbank' : spots.hide;
     for (const [x, z] of [spots.from, spots.to]) {
       if (hide === 'snowbank') {
-        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.16, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#eef2f6', roughness: 0.75 }));
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#eef2f6', roughness: 0.75 }));
         mound.scale.set(1.3, 0.55, 1);
         mound.position.set(x, -0.01, z);
         mound.receiveShadow = mound.castShadow = true;
         this.mounds.push(mound);
         this.group.add(mound);
       } else if (hide === 'hole' || hide === 'gap') {
-        const hole = new THREE.Mesh(new THREE.CircleGeometry(hide === 'gap' ? 0.035 : 0.028, 16), new THREE.MeshBasicMaterial({ color: '#120d0a' }));
+        // a hole: a dark opening with a soft rim of disturbed earth
+        const hole = new THREE.Mesh(new THREE.CircleGeometry(hide === 'gap' ? 0.035 : 0.028, 20), new THREE.MeshBasicMaterial({ color: '#0d0907' }));
         hole.rotation.x = -Math.PI / 2;
-        hole.scale.set(1.3, 0.8, 1);
+        hole.scale.set(1.3, 0.85, 1);
         hole.position.set(x, 0.003, z);
-        this.holes.push(hole);
-        this.group.add(hole);
+        const rim = new THREE.Mesh(new THREE.RingGeometry(hide === 'gap' ? 0.035 : 0.028, 0.05, 24), new THREE.MeshStandardMaterial({ color: '#4a3a2c', roughness: 1, transparent: true, opacity: 0.6 }));
+        rim.rotation.x = -Math.PI / 2;
+        rim.scale.set(1.3, 0.85, 1);
+        rim.position.set(x, 0.002, z);
+        this.holes.push(hole, rim);
+        this.group.add(hole, rim);
       }
     }
   }
 
+  /** A straight path is fine if every point on it is on walkable ground. */
+  private clear(a: THREE.Vector3, b: THREE.Vector3) {
+    for (let k = 0; k <= 16; k++) {
+      const p = a.clone().lerp(b, k / 16);
+      if (!this.walkable(p.x, p.z)) return false;
+    }
+    return true;
+  }
+
   /** Start a visit now (for testing); chase decides whether the cat comes. */
   trigger(chase = Math.random() < 0.45) {
-    if (!this.spots) return;
+    if (!this.spots || !this.cat || !this.mouse) return;
     const [fx, fz] = this.spots.from;
     const [tx, tz] = this.spots.to;
-    this.mPos.set(fx, 0, fz);
-    this.mYaw = yawTo(tx - fx, tz - fz);
+    const m = this.mouse;
+    m.pos.set(fx, 0, fz);
+    m.yaw = yawTo(tx - fx, tz - fz);
+    m.speed = m.targetSpeed = 0;
     // the mouse stops to sniff ~1.3 m short of its hiding place
     const d = Math.hypot(tx - fx, tz - fz);
     const stop = Math.max(0.25, Math.min(1.3, d * 0.55));
     this.waitAt.set(tx - ((tx - fx) / d) * stop, 0, tz - ((tz - fz) / d) * stop);
     this.setMouse('emerge');
-    this.mouse.root.visible = true;
-    this.chase = chase;
-    this.lastPrint.copy(this.mPos);
+    m.root.visible = true;
+    this.chase = false;
     if (chase) {
-      // the cat comes in from the side the mouse is heading away from
-      this.exitDir = Math.sign(fx - tx) || 1;
-      this.cPos.set(fx + this.exitDir * 3.2, 0, fz - 0.4);
-      this.cYaw = yawTo(-this.exitDir, 0);
-      this.setCat('walkIn');
-      this.cat.root.visible = true;
-      this.lastPaw.copy(this.cPos);
+      // the cat appears from a direction it could really have walked in from
+      const from = new THREE.Vector3(fx, 0, fz);
+      const away = Math.sign(fx - tx) || 1;
+      const candidates = [
+        [away, 0.15], [away, 0.8], [0.35 * away, 1], [-away, 0.3], [0, 1], [away, -0.6],
+      ].map(([x, z]) => from.clone().add(new THREE.Vector3(x, 0, z).normalize().multiplyScalar(3.2)));
+      const start = candidates.find((c) => this.walkable(c.x, c.z) && this.clear(c, this.waitAt));
+      if (start) {
+        this.chase = true;
+        const c = this.cat;
+        c.pos.copy(start);
+        c.yaw = yawTo(this.waitAt.x - start.x, this.waitAt.z - start.z);
+        c.speed = c.targetSpeed = 0.4;
+        this.entry.copy(start);
+        this.setCat('walkIn');
+        c.root.visible = true;
+      }
     }
+  }
+
+  get state() {
+    return `${this.mState}/${this.cState}`;
+  }
+
+  get busy() {
+    return this.mState !== 'hidden' || this.cState !== 'away';
   }
 
   private setMouse(s: MouseState) {
@@ -135,6 +179,7 @@ export class MouseCat {
 
   update(dt: number) {
     this.t += dt;
+    if (!this.cat || !this.mouse) return;
     if (this.mState === 'hidden' && this.cState === 'away') {
       this.next -= dt;
       if (this.next <= 0 && this.spots) {
@@ -143,232 +188,168 @@ export class MouseCat {
       }
       return;
     }
-    this.updateMouse(dt);
-    this.updateCat(dt);
+    if (this.mState !== 'hidden') this.updateMouse(dt);
+    if (this.cState !== 'away') this.updateCat(dt);
   }
 
   // ── mouse ─────────────────────────────────────────────────────────────────
   private updateMouse(dt: number) {
-    const m = this.mouse;
+    const m = this.mouse!;
     this.mTime += dt;
-    const target = new THREE.Vector3(this.spots!.to[0], 0, this.spots!.to[1]);
-    let speed = 0;
-    let sink = 0;
+    const hole = new THREE.Vector3(this.spots!.to[0], 0, this.spots!.to[1]);
+    m.lookAt = null;
+    m.sit = 0;
+    m.headDown = 0;
     switch (this.mState) {
       case 'emerge':
         // nose first out of the hole / snowbank
-        sink = (1 - Math.min(this.mTime / 0.6, 1)) * 0.04;
+        this.sink = (1 - Math.min(this.mTime / 0.6, 1)) * 0.035;
         if (this.mTime > 0.6) this.setMouse('sniff');
         break;
       case 'sniff':
-        m.head.rotation.y = Math.sin(this.t * 9) * 0.35;
-        m.head.rotation.z = Math.sin(this.t * 13) * 0.15;
-        if (this.mTime > 0.9 + Math.random() * 0.02) this.setMouse('scurry');
+        m.targetSpeed = 0;
+        m.headDown = 0.3 + 0.25 * Math.sin(this.t * 11);
+        m.lookAt = m.pos.clone().add(new THREE.Vector3(Math.cos(this.t * 2.3), 0.02, Math.sin(this.t * 1.7)));
+        if (this.mTime > 1.1) this.setMouse('scurry');
         break;
       case 'scurry': {
-        // quick dashes with little stops, toward the waiting spot
-        const dash = Math.sin(this.mTime * 3.1) > -0.6;
-        speed = dash ? 1.1 : 0;
-        const to = this.waitAt.clone().sub(this.mPos);
+        // quick dashes with little stops
+        const dash = Math.sin(this.mTime * 3.1) > -0.55;
+        const to = this.waitAt.clone().sub(m.pos);
+        m.targetSpeed = dash ? Math.min(0.9, to.length() * 4) : 0;
+        m.gait = 'trot';
+        m.turnToward(yawTo(to.x, to.z) + Math.sin(this.t * 2) * 0.2, 10, dt);
         if (to.length() < 0.03) this.setMouse('wait');
-        else {
-          this.mYaw = lerpAngle(this.mYaw, yawTo(to.x, to.z) + Math.sin(this.t * 2) * 0.25, dt * 8);
-          this.mPos.addScaledVector(to.normalize(), Math.min(speed * dt, to.length()));
-        }
         break;
       }
       case 'wait':
-        m.head.rotation.y = Math.sin(this.t * 7) * 0.4;
-        m.body.rotation.z = 0.15 + Math.sin(this.t * 11) * 0.03; // up on its haunches
-        if (!this.chase && this.mTime > 1.2) this.setMouse('flee');
+        // up on its haunches, sniffing the air
+        m.targetSpeed = 0;
+        m.speed = 0;
+        m.sit = 0.7;
+        m.headDown = -0.3 + 0.15 * Math.sin(this.t * 12);
+        if (!this.chase && this.mTime > 1.4) this.setMouse('flee');
         break;
       case 'flee': {
-        m.body.rotation.z = 0;
-        speed = this.chase ? 1.8 : 0.7;
-        const to = target.clone().sub(this.mPos);
-        this.mYaw = lerpAngle(this.mYaw, yawTo(to.x, to.z), dt * 14);
-        if (to.length() < 0.02) this.setMouse('dive');
-        else this.mPos.addScaledVector(to.normalize(), Math.min(speed * dt, to.length()));
+        m.gait = 'bound';
+        const to = hole.clone().sub(m.pos);
+        m.targetSpeed = 1.6;
+        m.speed = Math.max(m.speed, 1.2);
+        m.turnToward(yawTo(to.x, to.z), 14, dt);
+        if (to.length() < 0.05) this.setMouse('dive');
         break;
       }
       case 'dive':
-        sink = Math.min(this.mTime / 0.25, 1) * 0.05;
-        speed = 0.3;
+        m.targetSpeed = 0.3;
+        this.sink = Math.min(this.mTime / 0.25, 1) * 0.05;
         if (this.mTime > 0.3) {
           this.mState = 'hidden';
           m.root.visible = false;
         }
         break;
     }
-    // scurrying legs, a bobbing body and a waving tail
-    this.mPhase += dt * (6 + speed * 60);
-    m.legs.forEach((l, k) => (l.rotation.z = speed > 0 ? Math.sin(this.mPhase + (k % 2 ? Math.PI : 0) + (k < 2 ? 0 : Math.PI / 2)) * 0.9 : 0));
-    m.tail.forEach((s, k) => (s.rotation.y = Math.sin(this.t * 6 - k * 0.7) * (0.15 + speed * 0.2)));
-    m.body.position.y = 0.022 + (speed > 0 ? Math.abs(Math.sin(this.mPhase)) * 0.004 : 0);
-    m.root.position.set(this.mPos.x, -sink, this.mPos.z);
-    m.root.rotation.y = this.mYaw;
-    // snow: tiny paired prints and the drag line of the tail
-    if (this.snowy && speed > 0 && this.mPos.distanceTo(this.lastPrint) > 0.035) {
-      const side = new THREE.Vector3(Math.sin(this.mYaw), 0, Math.cos(this.mYaw)).multiplyScalar(0.012);
-      this.prints.stamp(this.mPos.x + side.x, this.mPos.z + side.z, 0.012, 0.014, this.mYaw, 0.8);
-      this.prints.stamp(this.mPos.x - side.x, this.mPos.z - side.z, 0.012, 0.014, this.mYaw, 0.8);
-      this.prints.stamp(this.mPos.x, this.mPos.z, 0.006, 0.04, this.mYaw, 0.45);
-      this.lastPrint.copy(this.mPos);
-    }
+    m.update(dt, -this.sink);
   }
 
   // ── cat ───────────────────────────────────────────────────────────────────
   private updateCat(dt: number) {
-    if (this.cState === 'away') return;
-    const c = this.cat;
+    const c = this.cat!;
+    const m = this.mouse!;
     this.cTime += dt;
-    let speed = 0;
-    let crouch = 0;
-    let sit = 0;
-    let wiggle = 0;
-    let leap = -1;
-    let gallop = false;
-    const toMouse = new THREE.Vector3(this.mPos.x - this.cPos.x, 0, this.mPos.z - this.cPos.z);
+    const toMouse = m.pos.clone().sub(c.pos);
+    toMouse.y = 0;
     const hole = new THREE.Vector3(this.spots!.to[0], 0, this.spots!.to[1]);
+    c.wiggle = 0;
+    c.lift = 0;
     switch (this.cState) {
-      case 'walkIn': {
-        // strolls in; drops into a stalk once it locks on to the mouse
-        speed = 0.6;
-        this.cYaw = lerpAngle(this.cYaw, yawTo(toMouse.x, toMouse.z), dt * 2);
-        this.cPos.addScaledVector(new THREE.Vector3(Math.cos(this.cYaw), 0, -Math.sin(this.cYaw)), speed * dt);
-        if (toMouse.length() < 1.9 || this.cTime > 7) this.setCat('stalk');
+      case 'walkIn':
+        // strolls in, tail up; drops into a stalk once it locks on
+        c.gait = 'walk';
+        c.targetSpeed = 0.42;
+        c.tailUp = 0.8;
+        c.crouch = Math.max(0, c.crouch - dt);
+        c.lookAt = m.pos.clone().setY(0.05);
+        c.turnToward(yawTo(toMouse.x, toMouse.z), 1.6, dt);
+        if (toMouse.length() < 1.9 || this.cTime > 8) this.setCat('stalk');
+        break;
+      case 'stalk': {
+        // belly low, slow deliberate steps, freezing now and then
+        c.crouch = Math.min(1, c.crouch + dt * 2);
+        c.tailUp = -1;
+        const freeze = Math.sin(this.cTime * 1.6) < -0.3;
+        c.targetSpeed = freeze || toMouse.length() < 0.8 ? 0 : 0.16;
+        c.lookAt = m.pos.clone().setY(0.03);
+        c.turnToward(yawTo(toMouse.x, toMouse.z), 2.5, dt);
+        if (toMouse.length() <= 0.85 && this.mState === 'wait') this.setCat('wiggle');
+        if (this.cTime > 14) this.setCat('wiggle');
         break;
       }
-      case 'stalk':
-        // belly low, slow deliberate steps, freezing now and then
-        crouch = Math.min(1, this.cTime * 2);
-        speed = Math.sin(this.cTime * 1.7) > -0.2 ? 0.22 : 0;
-        this.cYaw = lerpAngle(this.cYaw, yawTo(toMouse.x, toMouse.z), dt * 3);
-        if (toMouse.length() > 0.75) this.cPos.addScaledVector(toMouse.clone().normalize(), speed * dt);
-        if (toMouse.length() <= 0.8 && this.mState === 'wait') this.setCat('wiggle');
-        break;
       case 'wiggle':
-        crouch = 1;
-        wiggle = 1;
-        this.cYaw = lerpAngle(this.cYaw, yawTo(toMouse.x, toMouse.z), dt * 5);
+        c.targetSpeed = 0;
+        c.crouch = 1;
+        c.wiggle = Math.min(1, this.cTime * 3);
+        c.lookAt = m.pos.clone().setY(0.03);
+        c.turnToward(yawTo(toMouse.x, toMouse.z), 4, dt);
         if (this.cTime > 1.3) {
-          // pounce at where the mouse is now; the mouse bolts a beat later
-          this.leapFrom.copy(this.cPos);
-          this.leapTo.copy(this.mPos).addScaledVector(toMouse.clone().normalize(), -0.12);
+          this.leapFrom.copy(c.pos);
+          this.leapTo.copy(m.pos).addScaledVector(toMouse.clone().normalize(), -0.14);
           this.setCat('pounce');
         }
         break;
       case 'pounce': {
-        const T = 0.45;
-        leap = Math.min(this.cTime / T, 1);
-        this.cPos.lerpVectors(this.leapFrom, this.leapTo, leap);
+        // a low arcing leap; the mouse bolts a beat after take-off
+        const T = 0.42;
+        const k = Math.min(this.cTime / T, 1);
+        c.crouch = Math.max(0, 1 - this.cTime * 6);
+        c.gait = 'bound';
+        c.speed = c.targetSpeed = 0.01;
+        c.pos.lerpVectors(this.leapFrom, this.leapTo, k);
+        c.lift = Math.sin(Math.PI * k) * 0.12;
+        c.tailUp = 0;
         if (this.cTime > 0.08 && this.mState === 'wait') this.setMouse('flee');
-        if (leap >= 1) this.setCat('bound');
+        if (k >= 1) this.setCat('bound');
         break;
       }
       case 'bound': {
-        // a couple of bounds after the fleeing mouse
-        gallop = true;
-        speed = 1.4;
-        const to = hole.clone().sub(this.cPos);
-        this.cYaw = lerpAngle(this.cYaw, yawTo(to.x, to.z), dt * 8);
-        if (to.length() < 0.16 || this.cTime > 1.4) this.setCat('sit');
-        else this.cPos.addScaledVector(to.normalize(), speed * dt);
+        const to = hole.clone().sub(c.pos);
+        to.y = 0;
+        c.gait = 'bound';
+        c.targetSpeed = to.length() > 0.25 ? 2.1 : 0;
+        c.lookAt = hole.clone().setY(0.02);
+        c.turnToward(yawTo(to.x, to.z), 5, dt);
+        if (to.length() < 0.25 || this.cTime > 1.6) {
+          this.setCat('sit');
+          this.looks = [0.7, -0.8, 0.2].map((a) => c.pos.clone().add(new THREE.Vector3(Math.cos(c.yaw + a), 0.2, -Math.sin(c.yaw + a))));
+        }
         break;
       }
       case 'sit':
-        // nose at the hole, puzzled: head tilts, looks about, tail flicks
-        sit = Math.min(1, this.cTime * 3);
-        c.head.rotation.x = Math.sin(this.cTime * 2.2) > 0 ? 0.35 : -0.25;
-        c.head.rotation.y = this.cTime > 2.2 ? Math.sin(this.cTime * 1.3) * 0.7 : 0;
-        if (this.cTime > 4.5) {
+        // nose at the hole, puzzled: looks down, then about, tail curled
+        c.gait = 'walk';
+        c.targetSpeed = 0;
+        c.sit = Math.min(1, this.cTime * 2.5);
+        c.tailUp = 0.3;
+        c.lookAt = this.cTime < 1.6 ? hole.clone() : this.looks[Math.min(2, Math.floor((this.cTime - 1.6) / 1.1))];
+        if (this.cTime > 5) {
           this.setCat('wander');
-          this.cYaw = yawTo(this.exitDir * -1 || 1, 0.3);
-          c.head.rotation.set(0, 0, 0);
+          c.lookAt = null;
         }
         break;
-      case 'wander':
-        speed = 0.4;
-        this.cYaw = lerpAngle(this.cYaw, yawTo(-this.exitDir, 0.25), dt * 1.5);
-        this.cPos.addScaledVector(new THREE.Vector3(Math.cos(this.cYaw), 0, -Math.sin(this.cYaw)), speed * dt);
-        if (this.cTime > 9) {
+      case 'wander': {
+        // back the way it came
+        c.sit = Math.max(0, c.sit - dt * 2);
+        c.gait = 'walk';
+        c.tailUp = 0.9;
+        c.targetSpeed = c.sit > 0.2 ? 0 : 0.45;
+        const to = this.entry.clone().sub(c.pos);
+        c.turnToward(yawTo(to.x, to.z), 1.8, dt);
+        if (to.length() < 0.3 || this.cTime > 14) {
           this.cState = 'away';
           c.root.visible = false;
         }
         break;
-    }
-    this.poseCat(dt, speed, crouch, sit, wiggle, leap, gallop);
-    // bigger prints beside the mouse's trail
-    if (this.snowy && (speed > 0 || leap >= 1) && this.cPos.distanceTo(this.lastPaw) > (gallop ? 0.3 : 0.14)) {
-      const side = new THREE.Vector3(Math.sin(this.cYaw), 0, Math.cos(this.cYaw)).multiplyScalar(this.pawSide ? 0.045 : -0.045);
-      this.prints.stamp(this.cPos.x + side.x, this.cPos.z + side.z, 0.04, 0.048, this.cYaw, 0.95);
-      this.pawSide ^= 1;
-      this.lastPaw.copy(this.cPos);
-    }
-  }
-
-  private poseCat(dt: number, speed: number, crouch: number, sit: number, wiggle: number, leap: number, gallop: boolean) {
-    const c = this.cat;
-    const stride = gallop ? 0.55 : 0.32;
-    this.cPhase += (speed / stride) * Math.PI * 2 * dt;
-    const ph = this.cPhase;
-    // body height: standing 0.23 m, crouched 0.13, sitting with hips down
-    const leapY = leap >= 0 ? Math.sin(Math.PI * leap) * 0.22 : 0;
-    c.torso.position.y = 0.23 - crouch * 0.1 - sit * 0.06 + leapY;
-    c.torso.rotation.z = sit * 0.55 + (leap >= 0 ? (0.5 - leap) * 0.5 : 0) + (gallop ? Math.sin(ph) * 0.12 : 0);
-    // legs: lateral-sequence walk, paired gallop, extended in the air
-    const swing = (off: number) => Math.sin(ph + off) * (speed > 0 ? (gallop ? 0.9 : 0.5) : 0);
-    const offs = gallop ? [0, 0.3, Math.PI, Math.PI + 0.3] : [0, Math.PI, Math.PI / 2, (3 * Math.PI) / 2];
-    c.frontLegs.forEach((l, k) => {
-      let a = swing(offs[k]) - crouch * 0.35;
-      let knee = -crouch * 0.5;
-      if (leap >= 0) a = -1.1 + leap * 0.6;
-      if (sit) {
-        a = -sit * 0.55;
-        knee = 0;
       }
-      l.hip.rotation.z = a;
-      l.knee.rotation.z = knee + Math.max(0, Math.sin(ph + offs[k] + 1.5)) * (speed > 0 ? 0.5 : 0);
-    });
-    c.backLegs.forEach((l, k) => {
-      let a = swing(offs[k + 2]) + crouch * 0.55;
-      let knee = -crouch * 1.1;
-      if (leap >= 0) a = 1.0 - leap * 0.5;
-      if (sit) {
-        a = sit * 1.5;
-        knee = -sit * 2.3;
-      }
-      l.hip.rotation.z = a;
-      l.knee.rotation.z = knee - Math.max(0, Math.sin(ph + offs[k + 2] - 1.5)) * (speed > 0 ? 0.4 : 0);
-    });
-    // the wiggle: hindquarters shifting side to side, hind feet treading
-    c.hips.rotation.y = wiggle * Math.sin(this.t * 15) * 0.22;
-    c.hips.position.y = wiggle * 0.015;
-    // head low and forward when stalking
-    if (!sit) {
-      c.head.rotation.z = -crouch * 0.25;
-      c.head.position.set(0.24 + crouch * 0.03, 0.08 - crouch * 0.04, 0);
     }
-    // tail: low and still when stalking (tip twitching), up when walking,
-    // curled around when sitting
-    c.tail.forEach((s, k) => {
-      const tip = k / (c.tail.length - 1);
-      const base = sit ? -0.35 : crouch > 0.5 ? -0.1 : 0.35;
-      s.rotation.z = (k === 0 ? base : sit ? -0.05 : 0.08) + (crouch > 0.5 ? Math.sin(this.t * 9) * 0.25 * tip * tip : Math.sin(this.t * 2 - k) * 0.06);
-      s.rotation.y = sit ? 0.45 : Math.sin(this.t * 1.5 - k * 0.5) * 0.08;
-    });
-    c.ears.forEach((e) => (e.rotation.z = crouch > 0.5 ? -0.3 : 0));
-    c.root.position.set(this.cPos.x, 0, this.cPos.z);
-    c.root.rotation.y = this.cYaw;
-    c.root.updateMatrixWorld();
-    c.uRootInv.value.copy(c.root.matrixWorld).invert();
-  }
-
-  get state() {
-    return `${this.mState}/${this.cState}`;
-  }
-
-  get busy() {
-    return this.mState !== 'hidden' || this.cState !== 'away';
+    c.update(dt);
   }
 }

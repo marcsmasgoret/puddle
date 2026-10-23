@@ -439,3 +439,129 @@ export function openWater(
   };
   return mesh;
 }
+
+
+// ── the CN Tower ────────────────────────────────────────────────────────────
+/**
+ * The CN Tower (553 m): tapering shaft, main pod, SkyPod, antenna. At night
+ * its LED lighting runs up the shaft, the pod glows and red aircraft beacons
+ * blink on the antenna.
+ */
+export function cnTower(mat: THREE.Material, glow: THREE.Material, night = 0) {
+  const g = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(4, 15, 335, 6), mat);
+  shaft.position.y = 167;
+  const pod = new THREE.Mesh(new THREE.CylinderGeometry(22, 18, 18, 24), mat);
+  pod.position.y = 342;
+  const podRing = new THREE.Mesh(new THREE.TorusGeometry(21, 2, 8, 32), glow);
+  podRing.rotation.x = Math.PI / 2;
+  podRing.position.y = 344;
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(4, 5, 105, 8), mat);
+  upper.position.y = 402;
+  const skypod = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 8, 12), mat);
+  skypod.position.y = 447;
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 2.5, 100, 6), mat);
+  antenna.position.y = 503;
+  g.add(shaft, pod, podRing, upper, skypod, antenna);
+  if (night > 0) {
+    const pts: number[] = [];
+    // LED strips up the three corners of the shaft
+    for (let y = 8; y < 330; y += 6) {
+      const w = 15 - (11 * y) / 335;
+      for (const a of [0, 2.09, 4.19]) pts.push(Math.cos(a) * w, y, Math.sin(a) * w + 1, 0.05, 0.9);
+    }
+    // the pod's windows and the SkyPod
+    for (let a = 0; a < Math.PI * 2; a += 0.12) {
+      pts.push(Math.cos(a) * 22, 340, Math.sin(a) * 22, 0.7, 1.2);
+      pts.push(Math.cos(a) * 22, 346, Math.sin(a) * 22, 0.7, 1.0);
+    }
+    for (let a = 0; a < Math.PI * 2; a += 0.4) pts.push(Math.cos(a) * 7, 447, Math.sin(a) * 7, 0.5, 0.9);
+    g.add(nightLights(pts, night, { size: 2.2, gain: 2.6 }));
+    // red beacons up the antenna
+    const red: number[] = [];
+    for (const y of [460, 500, 552]) red.push(0, y, 2, 1, 2.2);
+    const beacons = nightLights(red, night, { size: 3.6, gain: 3 });
+    (beacons.material as THREE.ShaderMaterial).fragmentShader = (beacons.material as THREE.ShaderMaterial).fragmentShader.replace(
+      'gl_FragColor = vec4(vCol',
+      'gl_FragColor = vec4(vec3(1.0, 0.08, 0.04) * step(0.5, fract(vTw * 3.0 + 0.3)) * 2.0 + vCol * 0.0',
+    );
+    g.add(beacons);
+  }
+  return g;
+}
+
+// ── night lights ────────────────────────────────────────────────────────────
+/**
+ * Lit windows and street lights for distant cities at night: one point per
+ * light, drawn as a tiny soft glow a few pixels across (they are far away),
+ * with an HDR core so the bloom gives each a halo, a slow twinkle from the
+ * air between, and a mix of warm homes and cooler offices.
+ * Give it the points (x, y, z, warmth 0…1, brightness) in the group's space.
+ */
+export function nightLights(pts: number[], night: number, opts: { size?: number; gain?: number } = {}) {
+  const n = pts.length / 5;
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    pos.set([pts[k * 5], pts[k * 5 + 1], pts[k * 5 + 2]], k * 3);
+    const warm = pts[k * 5 + 3], b = pts[k * 5 + 4];
+    const c = new THREE.Color().setRGB(1.0, 0.72, 0.42).lerp(new THREE.Color(0.82, 0.9, 1.0), 1 - warm);
+    col.set([c.r * b, c.g * b, c.b * b], k * 3);
+    ph[k] = Math.random() * 100;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('phase', new THREE.BufferAttribute(ph, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uNight: { value: night }, uTime: sway.time, uSize: { value: opts.size ?? 2 }, uGain: { value: opts.gain ?? 1.4 } },
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      attribute float phase;
+      uniform float uTime, uSize;
+      varying vec3 vCol;
+      varying float vTw;
+      void main() {
+        vCol = color;
+        vTw = 0.8 + 0.2 * sin(uTime * (0.7 + fract(phase) * 2.0) + phase);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = uSize;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uNight, uGain;
+      varying vec3 vCol;
+      varying float vTw;
+      void main() {
+        float r = length(gl_PointCoord - 0.5) * 2.0;
+        float a = smoothstep(1.0, 0.0, r);
+        gl_FragColor = vec4(vCol * uGain * vTw * (0.4 + 1.6 * a * a), a * uNight);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  });
+  const p = new THREE.Points(g, mat);
+  p.frustumCulled = false;
+  p.visible = night > 0.01;
+  p.layers.enable(LAYER_REFLECT);
+  return p;
+}
+
+/** Window lights over the faces of buildings: rects [x0, x1, y0, y1, z]. */
+export function windowLights(rects: [number, number, number, number, number][], floor: number, fill: number, seed: number) {
+  const r = rng(seed);
+  const pts: number[] = [];
+  for (const [x0, x1, y0, y1, z] of rects) {
+    const office = r() < 0.5;
+    for (let y = y0 + floor * 0.7; y < y1 - floor * 0.3; y += floor) {
+      for (let x = x0 + floor * 0.5; x < x1; x += floor * 0.9) {
+        if (r() > fill) continue;
+        // whole floors tend to be lit or dark together
+        if (r() < 0.25) continue;
+        pts.push(x + (r() - 0.5) * floor * 0.3, y + (r() - 0.5) * floor * 0.2, z, office ? 0.3 + r() * 0.4 : 0.7 + r() * 0.3, 0.35 + r() * 0.65);
+      }
+    }
+  }
+  return pts;
+}

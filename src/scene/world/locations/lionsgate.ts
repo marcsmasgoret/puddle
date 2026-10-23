@@ -7,7 +7,7 @@
 // along the cables at night.
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
-import { ridge, hazed, openWater, conifers, rng, reflective, boulders } from '../props';
+import { ridge, hazed, openWater, conifers, rng, reflective, boulders, nightLights } from '../props';
 
 function bridge(color: THREE.Color, lightLevel: number) {
   const g = new THREE.Group();
@@ -58,13 +58,11 @@ function bridge(color: THREE.Color, lightLevel: number) {
     }
   }
   if (lightLevel > 0) {
-    const lm = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff1c9').multiplyScalar(3 * lightLevel), fog: false });
-    const bulb = new THREE.SphereGeometry(1.6, 6, 4);
-    for (const p of lights) {
-      const m = new THREE.Mesh(bulb, lm);
-      m.position.copy(p);
-      g.add(m);
-    }
+    // the necklace lights along the main cables, and the deck's lamps
+    const pts: number[] = [];
+    for (const p of lights) pts.push(p.x, p.y, p.z + 8, 0.9, 1.4);
+    for (let x = -span / 2 - 220; x < span / 2 + 220; x += 24) for (const z of [-8, 8]) pts.push(x, deckY + 3, z, 0.95, 1.0);
+    g.add(nightLights(pts, lightLevel, { size: 3, gain: 3 }));
   }
   return g;
 }
@@ -79,6 +77,7 @@ const def: LocationDef = {
   id: 'lionsgate',
   shape: () => ({ kind: 'blob', seed: 13, rx: 1.0, rz: 0.6 }),
   ground: { style: 'shore', a: '#8f8b85', b: '#a39582', c: '#bfae8e', bed: '#857560', bedAccent: '#7d7a74' },
+  water: (_x, z) => z < -7,
   critters: {
     // between the seawall stones
     mouse: { from: [-2.4, -4.7], to: [2.6, -5.0], hide: 'gap' },
@@ -125,6 +124,21 @@ const def: LocationDef = {
     // Lions (1646 m, ~12 km) subtend roughly 11° and 8°; drawn at ~1 km
     g.add(ridge({ z: -950, width: 6000, base: 10, hill: 140, color: hazed('#4c5d6d', haze, 1500, 2600), haze, mist: 0.5, seed: 12 }));
     g.add(ridge({ z: -1100, width: 6000, base: 50, hill: 120, color: hazed(rock, haze, 3000, 3800), haze, mist: 0.6, seed: 29, extra: (x) => lionsExtra(x) * 0.7 }));
+    // West Vancouver and North Vancouver at night: homes up the lower
+    // slopes of the North Shore, Marine Drive's lights along the water
+    if (night > 0) {
+      const lr = rng(77);
+      const pts: number[] = [];
+      for (let k = 0; k < 1100; k++) {
+        // clustered into neighbourhoods
+        const x = -2600 + lr() * 5200;
+        if (Math.sin(x * 0.004) + Math.sin(x * 0.011) < -0.6) continue;
+        const y = Math.pow(lr(), 1.8) * 60 + 2;
+        pts.push(x, y, -940 + lr() * 15, 0.85 + lr() * 0.15, 0.3 + lr() * 0.6);
+      }
+      for (let x = -2600; x < 2600; x += 26) pts.push(x, 1.5, -930, 1, 0.6);
+      g.add(nightLights(pts, night, { size: 1.6, gain: 1.1 }));
+    }
     // a few shore conifers framing the view
     g.add(conifers([[-9, -5, 14], [-12, -9, 17], [10.5, -4.5, 12], [14, -8, 16]], season, 11));
     return { group: g };

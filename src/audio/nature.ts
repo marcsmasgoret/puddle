@@ -64,7 +64,7 @@ export function planFor(s: Scene): Plan {
   const winter = season === 'winter', summer = season === 'summer', spring = season === 'spring', autumn = season === 'autumn';
   const lake = L === 'dock' || L === 'algonquin';
   const wet = lake || L === 'highpark';
-  const shore = L === 'beach' || L === 'lionsgate';
+  const shore = L === 'beach' || L === 'lionsgate' || L === 'europe';
   const leafy = L !== 'city' && !shore;
   const beds: Plan['beds'] = { wind: 0.1 };
   const v: Plan['voices'] = {};
@@ -72,6 +72,7 @@ export function planFor(s: Scene): Plan {
 
   // ── water and weather beds
   if (L === 'beach') beds.surf = 0.6;
+  if (L === 'europe') beds.surf = 0.3; // a gentle Mediterranean wash
   if (L === 'lionsgate') beds.surf = 0.35;
   if (lake) beds.lapping = 0.4;
   if (L === 'highpark') beds.lapping = 0.12;
@@ -129,6 +130,9 @@ export function planFor(s: Scene): Plan {
     if (summer && lake) v.bullfrog = 2;
   }
   if (summer && day && (L === 'backyard' || L === 'highpark' || L === 'city' || L === 'forest')) beds.cicadas = 0.25;
+  // the Mediterranean summer is loud with cicadas in the pines
+  if (L === 'europe' && (summer || season === 'spring') && !night) beds.cicadas = summer ? 0.5 : 0.2;
+  if (L === 'europe' && night && !winter) v.crickets = 40;
 
   // ── people places
   if (L === 'city') {

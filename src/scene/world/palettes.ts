@@ -43,12 +43,14 @@ const BASE: Record<TimeOfDay, Mood> = {
     night: 0, overcast: 0, fogNear: 20, fogFar: 230, exposure: 1.0,
   },
   night: {
-    skyTop: c('#0a1430'), skyHorizon: c('#1f2d4f'), haze: c('#1b2540'),
-    // the "sun" at night is the moon: cool, dim, high
-    sunColor: c('#a9bce6'), sunIntensity: 0.55, sunElevation: deg(38), sunAzimuth: deg(28),
-    hemiSky: c('#36497a'), hemiGround: c('#1a1c24'), hemiIntensity: 0.55,
-    cloudColor: c('#3a4566'), cloudAmount: 0.3,
-    night: 1, overcast: 0, fogNear: 15, fogFar: 200, exposure: 1.15,
+    // a clear moonlit night: deep blue sky, silvery moonlight. The moon
+    // hangs low over the far side of the scene, where you can see it (and
+    // its reflection in the puddle)
+    skyTop: c('#0a1838'), skyHorizon: c('#2b3f6e'), haze: c('#263862'),
+    sunColor: c('#c2d2f5'), sunIntensity: 1.25, sunElevation: deg(13), sunAzimuth: deg(-14),
+    hemiSky: c('#5068a0'), hemiGround: c('#20232e'), hemiIntensity: 1.0,
+    cloudColor: c('#46557d'), cloudAmount: 0.25,
+    night: 1, overcast: 0, fogNear: 18, fogFar: 230, exposure: 1.4,
   },
 };
 

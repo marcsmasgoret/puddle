@@ -66,6 +66,7 @@ const def: LocationDef = {
   id: 'algonquin',
   shape: () => ({ kind: 'blob', seed: 21, rx: 0.95, rz: 0.6, wobble: 1.3 }),
   ground: { style: 'granite', a: '#a99088', b: '#8e8682', c: '#a3a77c', bed: '#6d6158', bedAccent: '#9a8a7d' },
+  water: (_x, z) => z < -6.5,
   critters: {
     // out from under the canoe, across the rock to a crevice
     mouse: { from: [1.9, -2.1], to: [-0.4, -4.1], hide: 'hole' },

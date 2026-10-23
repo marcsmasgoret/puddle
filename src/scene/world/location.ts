@@ -9,11 +9,12 @@ import type { Waters } from './props';
 import type { MouseSpots } from '../animals/mouseCat';
 import type { Habitat } from '../animals/wildlife';
 
-export type LocationId = 'forest' | 'beach' | 'city' | 'backyard' | 'dock' | 'highpark' | 'lionsgate' | 'algonquin';
+export type LocationId = 'forest' | 'beach' | 'europe' | 'city' | 'backyard' | 'dock' | 'highpark' | 'lionsgate' | 'algonquin';
 
 export const LOCATIONS: [LocationId, string][] = [
   ['forest', 'Forest'],
-  ['beach', 'Beach'],
+  ['beach', 'PEI beach'],
+  ['europe', 'Mediterranean'],
   ['city', 'City street'],
   ['backyard', 'Backyard pool'],
   ['dock', 'Cottage dock'],
@@ -47,6 +48,8 @@ export interface LocationDef {
   /** backyard pool in winter */
   hotTub?(season: Season): boolean;
   build(ctx: LocationContext): BuiltLocation;
+  /** is (x, z) open water (lake, sea, pond)? Animals keep off it. */
+  water?(x: number, z: number): boolean;
   /** where the mouse lives, and what else lives here */
   critters: { mouse: MouseSpots; habitat: Habitat };
 }
@@ -54,6 +57,7 @@ export interface LocationDef {
 export const loaders: Record<LocationId, () => Promise<{ default: LocationDef }>> = {
   forest: () => import('./locations/forest'),
   beach: () => import('./locations/beach'),
+  europe: () => import('./locations/europe'),
   city: () => import('./locations/city'),
   backyard: () => import('./locations/backyard'),
   dock: () => import('./locations/dock'),

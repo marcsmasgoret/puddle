@@ -134,8 +134,10 @@ export class World {
     const critterKey = `${c.location}|${c.season}|${c.time}`;
     if (critterKey !== this.critterKey) {
       this.critterKey = critterKey;
-      this.mouseCat.configure(def.critters.mouse, c.season === 'winter');
-      this.wildlife.configure(def.critters.habitat, c.season, c.time);
+      // animals keep to solid ground: off open water and out of the puddle
+      const walkable = (x: number, z: number) => !def.water?.(x, z) && this.solver.sdfAt(x, z) > 0.1;
+      this.mouseCat.configure(def.critters.mouse, c.season === 'winter', walkable);
+      this.wildlife.configure(def.critters.habitat, c.season, c.time, walkable);
       this.prints.clear(this.renderer);
     }
 
