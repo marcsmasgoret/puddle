@@ -14,9 +14,8 @@ import { WetMap } from './render/wetmap';
 import { createPanel } from './ui/panel';
 import { createFullscreenButton } from './ui/fullscreen';
 import { createDrawer } from './ui/drawer';
-import { createMuteButton } from './ui/sound';
+import { createSoundButton } from './ui/sound';
 import { Audio, haptic } from './audio/audio';
-import { ambienceFor } from './audio/ambience';
 import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
 import { AdaptiveQuality } from './render/quality';
@@ -105,7 +104,9 @@ function dropImpact(x: number, z: number, r: number, v: number): Impulse {
 // ── sound ────────────────────────────────────────────────────────────────────
 const audio = new Audio();
 audio.volume = settings.volume;
+audio.musicVolume = settings.musicVolume ?? 0.45;
 audio.muted = settings.muted;
+const soundScene = () => ({ ...world.config, hotTub: world.hotTub });
 // browsers only allow sound after a user gesture
 const unlockAudio = () => audio.unlock();
 window.addEventListener('pointerdown', unlockAudio, { capture: true });
@@ -130,7 +131,7 @@ const world = new World(
     },
     onHotTub(on) {
       applyFluid(chosenFluid, on);
-      audio.setAmbience(ambienceFor(world.config, on));
+      audio.setScene({ ...world.config, hotTub: on });
       if (on) toast('the pool is a hot tub for the winter <small>· 38 °C</small>', 3500);
     },
   },
@@ -141,7 +142,7 @@ const world = new World(
 
 /** lighting changed: pass the sun and sky to the hand-written shaders */
 function syncMood() {
-  audio.setAmbience(ambienceFor(world.config, world.hotTub));
+  audio.setScene(soundScene());
   const m = world.env.mood;
   water.uniforms.uSunDir.value.copy(world.env.sunDir);
   water.uniforms.uSunColor.value.copy(m.sunColor).multiplyScalar(m.sunIntensity);
@@ -253,7 +254,7 @@ const ndcAt = (cx: number, cy: number) => {
 };
 const drawer = createDrawer({
   onDragStart: (kind, id, x, y) => toys.carryNew(id, kind, ndcAt(x, y)),
-  onDragMove: (id, x, y) => toys.moveCarry(id, ndcAt(x, y)),
+  onDragMove: (id, x, y) => toys.moveCarry(id, ndcAt(x, y), drawer.isOverButton(x, y)),
   onDragEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onTap(kind) {
     // drop it from a hand's height somewhere over the water
@@ -317,9 +318,10 @@ attachPointer(canvas, camera, {
     held.delete(id);
   },
   onPressAnywhere: () => {
-    if (!panel.isOpen() && !drawer.isOpen()) return false;
+    if (!panel.isOpen() && !drawer.isOpen() && !soundCard.isOpen()) return false;
     panel.close();
     drawer.close();
+    soundCard.close();
     return true;
   },
   onPickDown: (id, ndc) => settings.mode !== 'fish' && toys.pick(id, ndc),
@@ -329,7 +331,7 @@ attachPointer(canvas, camera, {
   },
   onCast: (x, z) => fishing.cast(x, z),
   onReel: () => fishing.reelIn(),
-  onCarryMove: (id, ndc) => toys.moveCarry(id, ndc),
+  onCarryMove: (id, ndc, x, y) => toys.moveCarry(id, ndc, drawer.isOverButton(x, y)),
   onCarryEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onSlap: slapAt,
   onStir(x0, z0, x1, z1, dt) {
@@ -434,25 +436,26 @@ function updateHolds(dt: number) {
 }
 
 let markFluid: (v: FluidId) => void = () => {};
-panel.addSlider(
-  'Sound',
-  () => settings.volume,
-  (v) => {
+const soundCard = createSoundButton({
+  music: () => settings.musicVolume ?? 0.45,
+  setMusic(v) {
+    settings.musicVolume = v;
+    audio.setMusicVolume(v);
+    saveSettings();
+  },
+  sounds: () => settings.volume,
+  setSounds(v) {
     settings.volume = v;
     audio.setVolume(v);
     saveSettings();
   },
-  (v) => (v < 0.01 ? 'off' : `${Math.round(v * 100)} %`),
-  ['quiet', 'loud'],
-);
-createMuteButton(
-  () => settings.muted,
-  (m) => {
+  muted: () => settings.muted,
+  setMuted(m) {
     settings.muted = m;
     audio.setMuted(m);
     saveSettings();
   },
-);
+});
 markFluid = panel.addChoice<FluidId>(
   'Fluid',
   [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck']],
@@ -576,13 +579,14 @@ if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
   fishing,
   setMode,
   flick: (dx: number, dy: number, ms: number, z = 0) => stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth),
-  spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
+  spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat' | 'donut', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
   hold: (id: number, x: number, z: number) => held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) }),
   release: (id: number) => held.delete(id),
   stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
   },
   setPaused: (p: boolean) => (paused = p),
+  audio,
   mouse: (chase: boolean) => world.mouseCat.trigger(chase),
   renderer,
   printsMax: () => {

@@ -3,7 +3,7 @@
 // offset so its origin is the centre of mass.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DUCK, PAPER, SAIL, BOBBER, type ToyKind } from '../physics/toyBodies';
+import { DUCK, PAPER, SAIL, BOBBER, DONUT, type ToyKind } from '../physics/toyBodies';
 import { LAYER_REFLECT } from '../render/pipeline';
 
 function tinted(g: THREE.BufferGeometry, color: string) {
@@ -128,7 +128,45 @@ function bobber() {
   return { geo, mat, com: BOBBER.com };
 }
 
-const builders = { duck, paperBoat: paperBoat, sailboat, bobber };
+/** Inflatable beach donut: pink icing with a scalloped drip edge, sprinkles. */
+function donut() {
+  const { R, r } = DONUT;
+  const t = new THREE.TorusGeometry(R, r, 28, 72);
+  t.rotateX(Math.PI / 2);
+  t.translate(0, r, 0);
+  const pos = t.attributes.position as THREE.BufferAttribute;
+  const col = new Float32Array(pos.count * 3);
+  const icing = new THREE.Color('#f58fb4'), dough = new THREE.Color('#e7b679'), c = new THREE.Color();
+  for (let k = 0; k < pos.count; k++) {
+    const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+    const ang = Math.atan2(z, x);
+    // the icing covers the top and drips over the sides in soft scallops
+    const edge = r * (0.75 + 0.35 * Math.sin(ang * 9) + 0.15 * Math.sin(ang * 23 + 1.3));
+    c.copy(y > edge ? icing : dough);
+    c.toArray(col, k * 3);
+  }
+  t.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  t.deleteAttribute('uv');
+  const parts: THREE.BufferGeometry[] = [t.toNonIndexed()];
+  const sprinkleCols = ['#ffffff', '#7fd3f2', '#ffe066', '#9be38b', '#c79bf2', '#ff6f61'];
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let k = 0; k < 46; k++) {
+    const a = rnd() * Math.PI * 2;
+    const phi = (rnd() - 0.5) * 1.6; // around the top of the tube
+    const ring = R + Math.sin(phi) * r;
+    const s = new THREE.CapsuleGeometry(0.0013, 0.0065, 2, 6);
+    s.rotateZ(Math.PI / 2);
+    s.rotateY(rnd() * Math.PI);
+    s.translate(Math.cos(a) * ring, r + Math.cos(phi) * r + 0.0008, Math.sin(a) * ring);
+    parts.push(tinted(s, sprinkleCols[k % sprinkleCols.length]));
+  }
+  const geo = mergeGeometries(parts);
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.28, clearcoat: 0.9, clearcoatRoughness: 0.15, sheen: 0.2 });
+  return { geo, mat, com: DONUT.com };
+}
+
+const builders = { duck, paperBoat: paperBoat, sailboat, bobber, donut };
 const cache = new Map<ToyKind, { geo: THREE.BufferGeometry; mat: THREE.Material }>();
 
 export function toyMesh(kind: ToyKind) {

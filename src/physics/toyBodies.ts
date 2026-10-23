@@ -18,11 +18,15 @@
 //                45 g in all (draft ≈ 1 cm, so it clears a 1.5 cm puddle).
 //                The low centre of mass keeps the tall mast upright
 //                (positive metacentric height).
+//  Beach donut   toy-sized inflatable ring, 17 cm across, a 2.5 cm vinyl
+//                tube around a 6 cm centre circle, 12 g. Its 740 cm³ of air
+//                make it ride almost on top of the water (draft ~1 mm), so
+//                the wind pushes it about more than anything else.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
 import type { BodyDef, HullSample } from './rigidbody';
 
-export type ToyKind = 'duck' | 'paperBoat' | 'sailboat' | 'bobber';
+export type ToyKind = 'duck' | 'paperBoat' | 'sailboat' | 'bobber' | 'donut';
 
 function voxelize(inside: (p: THREE.Vector3) => boolean, min: THREE.Vector3, max: THREE.Vector3, s: number, com: THREE.Vector3): HullSample[] {
   const out: HullSample[] = [];
@@ -59,15 +63,26 @@ export const SAIL = {
 };
 
 export const BOBBER = { r: 0.012, mass: 0.0036, com: new THREE.Vector3(0, -0.003, 0) };
+/** torus: centre-circle radius R, tube radius r */
+export const DONUT = { R: 0.06, r: 0.025, mass: 0.012, com: new THREE.Vector3(0, 0.025, 0) };
 
 /** area each toy shows to the wind above the water [m²] (sail + hull side) */
-export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003 };
+export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003, donut: 0.0075 };
 
 export function bodyDef(kind: ToyKind): BodyDef {
   if (kind === 'bobber') {
     const { r, mass, com } = BOBBER;
     const samples = voxelize((p) => p.length() <= r, new THREE.Vector3(-r, -r, -r), new THREE.Vector3(r, r, r), 0.004, com);
     return { mass, inertia: ellipsoidInertia(mass, r, r, r, 1.5), samples, bottom: -r - com.y, radius: r };
+  }
+  if (kind === 'donut') {
+    const { R, r, mass, com } = DONUT;
+    const inside = (p: THREE.Vector3) => (Math.hypot(p.x, p.z) - R) ** 2 + (p.y - r) ** 2 <= r * r;
+    const e = R + r;
+    const samples = voxelize(inside, new THREE.Vector3(-e, 0, -e), new THREE.Vector3(e, 2 * r, e), 0.01, com);
+    // thin-walled torus: mass in the skin, I_y = m(R² + 3r²/2), I_x = I_z = m(R²/2 + 5r²/8) (×1.2 for the shell)
+    const I = new THREE.Vector3(mass * (R * R / 2 + (5 / 8) * r * r), mass * (R * R + 1.5 * r * r), mass * (R * R / 2 + (5 / 8) * r * r)).multiplyScalar(1.2);
+    return { mass, inertia: I, samples, bottom: -com.y, radius: R + r };
   }
   if (kind === 'duck') {
     const { body, head, com, mass } = DUCK;

@@ -11,41 +11,52 @@
 //  • Each fluid slaps differently: water is a splash; honey a slow, low
 //    "gloop" (viscous, no droplets); mercury a bright metallic ring (it is a
 //    metal with a stiff, dense surface); oobleck a dull thud (it jams solid).
-//  • Ambience per place, season, time and weather: wind, waves or lapping
-//    water, birdsong by day, crickets on summer nights, rain hiss, a
-//    crackling campfire, hot-tub bubbles.
+//  • Nature (nature.ts) and music (music.ts) are separate layers with their
+//    own volume, so the puddle can sit quietly next to your own music.
 //
 // The context starts on the first touch (browsers require a user gesture).
-// One master volume, one mute.
+//
+// Mix:  effects ─┐
+//       nature ──┼─ reverb send ─ convolver ─┐
+//       music ───┘                           ├─ compressor ─ out
+//       (dry) ───────────────────────────────┘
 // ─────────────────────────────────────────────────────────────────────────────
 import type { FluidId } from '../physics/fluids';
+import { Music } from './music';
+import { Nature, type Scene } from './nature';
 
 const MINNAERT = 3.26; // Hz·m
 
-export interface AmbienceSpec {
-  wind: number;
-  waves: number; // surf (beach, inlet)
-  lapping: number; // lake against a dock or rock
-  traffic: number;
-  rain: number;
-  birds: number;
-  crickets: number;
-  frogs: number;
-  fire: number;
-  bubbles: number; // hot tub
-  loons: number;
+/** A synthetic room / landscape impulse response: decaying stereo noise. */
+function impulse(ctx: AudioContext, seconds: number, decay: number, pre = 0.01) {
+  const n = Math.floor(ctx.sampleRate * seconds);
+  const b = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = b.getChannelData(c);
+    let lp = 0;
+    for (let k = 0; k < n; k++) {
+      const t = k / ctx.sampleRate;
+      lp = lp * 0.6 + (Math.random() * 2 - 1) * 0.4; // a little darker than white
+      d[k] = t < pre ? 0 : lp * Math.pow(1 - t / seconds, decay);
+    }
+  }
+  return b;
 }
 
 export class Audio {
   ctx: AudioContext | null = null;
   private master!: GainNode;
   private sfx!: GainNode;
-  private amb!: GainNode;
+  private natureBus!: GainNode;
+  private musicBus!: GainNode;
   private noise!: AudioBuffer;
-  private beds: Partial<Record<keyof AmbienceSpec, { gain: GainNode; stop: () => void }>> = {};
-  private spec: AmbienceSpec | null = null;
-  private timers: number[] = [];
+  private music: Music | null = null;
+  private nature: Nature | null = null;
+  private scene: Scene | null = null;
+  private analyser: AnalyserNode | null = null;
+  /** effects and nature */
   volume = 0.7;
+  musicVolume = 0.5;
   muted = false;
 
   /** call from a user gesture */
@@ -59,25 +70,66 @@ export class Audio {
     const ctx = new AC();
     this.ctx = ctx;
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14;
-    comp.ratio.value = 4;
+    comp.threshold.value = -16;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.01;
+    comp.release.value = 0.25;
     this.master = ctx.createGain();
     this.master.connect(comp).connect(ctx.destination);
+    this.analyser = ctx.createAnalyser();
+    this.analyser.fftSize = 2048;
+    comp.connect(this.analyser);
+    // the shared reverb: a soft outdoor space
+    const verb = ctx.createConvolver();
+    verb.buffer = impulse(ctx, 2.8, 3.2);
+    const verbOut = ctx.createGain();
+    verbOut.gain.value = 0.55;
+    verb.connect(verbOut).connect(this.master);
+    // the far shore: a long, dark echo for loons, wolves and horns
+    const far = ctx.createConvolver();
+    far.buffer = impulse(ctx, 5, 2.2, 0.12);
+    const farLp = ctx.createBiquadFilter();
+    farLp.type = 'lowpass';
+    farLp.frequency.value = 2200;
+    const farOut = ctx.createGain();
+    farOut.gain.value = 0.5;
+    far.connect(farLp).connect(farOut).connect(this.master);
+
     this.sfx = ctx.createGain();
-    this.amb = ctx.createGain();
-    this.sfx.connect(this.master);
-    this.amb.connect(this.master);
-    this.amb.gain.value = 0.55;
+    this.natureBus = ctx.createGain();
+    this.musicBus = ctx.createGain();
+    for (const [bus, send] of [[this.sfx, 0.12], [this.natureBus, 0.3], [this.musicBus, 0.42]] as [GainNode, number][]) {
+      bus.connect(this.master);
+      const g = ctx.createGain();
+      g.gain.value = send;
+      bus.connect(g).connect(verb);
+    }
+    const natureIn = ctx.createGain();
+    natureIn.gain.value = 0.7;
+    natureIn.connect(this.natureBus);
+    const farSend = ctx.createGain();
+    farSend.connect(far);
+    // music gets a gentle high cut so it sits behind the scene
+    const musicIn = ctx.createBiquadFilter();
+    musicIn.type = 'lowpass';
+    musicIn.frequency.value = 7000;
+    musicIn.connect(this.musicBus);
     // 2 s of white noise, reused by every noisy sound
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const d = this.noise.getChannelData(0);
     for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
+    this.nature = new Nature(ctx, this.noise, natureIn, farSend);
+    this.music = new Music(ctx, this.noise, musicIn);
     this.applyVolume();
-    if (this.spec) this.setAmbience(this.spec);
+    if (this.scene) this.setScene(this.scene);
   }
 
   setVolume(v: number) {
     this.volume = v;
+    this.applyVolume();
+  }
+  setMusicVolume(v: number) {
+    this.musicVolume = v;
     this.applyVolume();
   }
   setMuted(m: boolean) {
@@ -86,8 +138,38 @@ export class Audio {
   }
   private applyVolume() {
     if (!this.ctx) return;
-    const v = this.muted ? 0 : this.volume * this.volume; // perceptual taper
-    this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 1, t, 0.05);
+    // perceptual taper
+    this.sfx.gain.setTargetAtTime(this.volume * this.volume, t, 0.05);
+    this.natureBus.gain.setTargetAtTime(this.volume * this.volume, t, 0.05);
+    this.musicBus.gain.setTargetAtTime(this.musicVolume * this.musicVolume * 0.9, t, 0.05);
+    // stop composing when nobody can hear it
+    if (this.music) {
+      if (this.muted || this.musicVolume < 0.01) this.music.stop();
+      else this.music.start();
+    }
+  }
+
+  /** output level right now: peak and RMS of the last ~40 ms (tests, meters) */
+  meter() {
+    if (!this.analyser) return { peak: 0, rms: 0 };
+    const d = new Float32Array(this.analyser.fftSize);
+    this.analyser.getFloatTimeDomainData(d);
+    let peak = 0, sum = 0;
+    for (const x of d) {
+      peak = Math.max(peak, Math.abs(x));
+      sum += x * x;
+    }
+    return { peak, rms: Math.sqrt(sum / d.length) };
+  }
+
+  /** where we are: drives the nature soundscape and the music's mood */
+  setScene(s: Scene) {
+    this.scene = s;
+    if (!this.ctx) return;
+    this.nature!.setScene(s);
+    this.music!.setMood(s.season, s.time);
   }
 
   // ── building blocks ───────────────────────────────────────────────────────
@@ -239,101 +321,6 @@ export class Audio {
   nibble() {
     if (!this.ctx) return;
     this.bubble(0.003, 0.06);
-  }
-
-  // ── ambience ──────────────────────────────────────────────────────────────
-  setAmbience(spec: AmbienceSpec) {
-    this.spec = spec;
-    if (!this.ctx) return;
-    const ctx = this.ctx;
-    for (const k of Object.keys(spec) as (keyof AmbienceSpec)[]) {
-      const level = spec[k];
-      let bed = this.beds[k];
-      if (!bed && level > 0) bed = this.beds[k] = this.makeBed(k);
-      bed?.gain.gain.setTargetAtTime(level, ctx.currentTime, 1.2);
-    }
-    // sparse events: birdsong, crickets, frogs, fire crackle, loons
-    this.timers.forEach((t) => clearInterval(t));
-    this.timers = [];
-    const every = (ms: number, fn: () => void) => this.timers.push(window.setInterval(() => document.hidden || fn(), ms));
-    if (spec.birds > 0) every(900, () => Math.random() < 0.35 * spec.birds && this.birdsong(spec.birds));
-    if (spec.crickets > 0) every(350, () => Math.random() < 0.6 && this.cricket(spec.crickets));
-    if (spec.frogs > 0) every(1300, () => Math.random() < 0.4 && this.frog(spec.frogs));
-    if (spec.fire > 0) every(120, () => Math.random() < 0.35 && this.crackle(spec.fire));
-    if (spec.loons > 0) every(9000, () => Math.random() < 0.3 && this.loon(spec.loons));
-    if (spec.rain > 0) every(60, () => this.bubble(0.0004 + Math.random() * 0.0012, 0.025 * spec.rain, 0, this.amb));
-    if (spec.bubbles > 0) every(70, () => this.bubble(0.002 + Math.random() * 0.004, 0.05 * spec.bubbles, 0, this.amb));
-  }
-
-  /** continuous beds: shaped noise loops */
-  private makeBed(kind: keyof AmbienceSpec) {
-    const ctx = this.ctx!;
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
-    gain.connect(this.amb);
-    const s = this.noiseSrc(true);
-    const f = ctx.createBiquadFilter();
-    const lfo = ctx.createOscillator();
-    const lfoGain = ctx.createGain();
-    const mod = ctx.createGain();
-    mod.gain.value = 0.6;
-    lfo.connect(lfoGain).connect(mod.gain);
-    s.connect(f).connect(mod).connect(gain);
-    const set = (type: BiquadFilterType, freq: number, q: number, rate: number, depth: number) => {
-      f.type = type;
-      f.frequency.value = freq;
-      f.Q.value = q;
-      lfo.frequency.value = rate;
-      lfoGain.gain.value = depth;
-    };
-    if (kind === 'wind') set('lowpass', 420, 0.8, 0.09, 0.45);
-    else if (kind === 'waves') set('lowpass', 900, 0.6, 0.11, 0.55); // swell every ~9 s
-    else if (kind === 'lapping') set('bandpass', 500, 0.8, 0.45, 0.4);
-    else if (kind === 'traffic') set('lowpass', 160, 0.7, 0.05, 0.3);
-    else if (kind === 'rain') set('highpass', 2200, 0.5, 0.2, 0.08);
-    else if (kind === 'fire') set('lowpass', 250, 0.7, 0.3, 0.3);
-    else if (kind === 'bubbles') set('lowpass', 700, 0.7, 2.5, 0.3);
-    else set('bandpass', 3000, 1, 0.1, 0.0); // event-only kinds stay silent
-    s.start();
-    lfo.start();
-    return { gain, stop: () => (s.stop(), lfo.stop()) };
-  }
-
-  private birdsong(level: number) {
-    // a short phrase of FM chirps
-    const base = 2600 + Math.random() * 2200;
-    const n = 2 + Math.floor(Math.random() * 5);
-    for (let k = 0; k < n; k++) {
-      const f = base * (0.85 + Math.random() * 0.4);
-      this.tone(f, f * (Math.random() < 0.5 ? 1.35 : 0.75), 0.03 * level, 0.01, 0.07, k * 0.11, 'sine', this.amb);
-    }
-  }
-  private cricket(level: number) {
-    for (let k = 0; k < 3; k++) this.tone(4600, 4580, 0.012 * level, 0.002, 0.018, k * 0.035, 'sine', this.amb);
-  }
-  private frog(level: number) {
-    for (let k = 0; k < 2; k++) this.tone(260, 220, 0.05 * level, 0.01, 0.08, k * 0.15, 'triangle', this.amb);
-  }
-  private crackle(level: number) {
-    this.burst('highpass', 1800 + Math.random() * 2500, 1, 0.05 * level, 0.001, 0.02 + Math.random() * 0.03, 0, this.amb);
-  }
-  private loon(level: number) {
-    // the common loon's wail: a slow rise, hold and fall
-    const ctx = this.ctx!;
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(620, t);
-    o.frequency.linearRampToValueAtTime(1050, t + 0.6);
-    o.frequency.setValueAtTime(1050, t + 1.5);
-    o.frequency.linearRampToValueAtTime(880, t + 2.2);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.05 * level, t + 0.3);
-    g.gain.setValueAtTime(0.05 * level, t + 1.9);
-    g.gain.linearRampToValueAtTime(0.0001, t + 2.4);
-    o.connect(g).connect(this.amb);
-    o.start(t);
-    o.stop(t + 2.5);
   }
 }
 

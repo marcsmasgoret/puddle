@@ -22,7 +22,7 @@ export interface PointerHandlers {
   onPressAnywhere?(): boolean;
   /** return true if the press picked up an object (then it is carried) */
   onPickDown?(id: number, ndc: THREE.Vector2): boolean;
-  onCarryMove?(id: number, ndc: THREE.Vector2): void;
+  onCarryMove?(id: number, ndc: THREE.Vector2, clientX: number, clientY: number): void;
   onCarryEnd?(id: number, clientX: number, clientY: number): void;
   mode(): 'slap' | 'skip' | 'fish';
   onFlick(dx: number, dy: number, ms: number, startGround: THREE.Vector3): void;
@@ -101,7 +101,7 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
     const f = fingers.get(e.pointerId);
     if (!f) return;
     if (f.state === 'carry') {
-      h.onCarryMove?.(e.pointerId, toNdc(e));
+      h.onCarryMove?.(e.pointerId, toNdc(e), e.clientX, e.clientY);
       return;
     }
     if (f.state === 'flick') return;

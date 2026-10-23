@@ -19,6 +19,7 @@ export interface Settings {
   time: TimeOfDay;
   weather: Weather;
   volume: number;
+  musicVolume: number;
   muted: boolean;
 }
 
@@ -33,6 +34,7 @@ const defaults: Settings = {
   time: 'day',
   weather: 'clear',
   volume: 0.7,
+  musicVolume: 0.45,
   muted: false,
 };
 

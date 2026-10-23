@@ -284,3 +284,7 @@ body {
 @media (max-width: 600px) {
   .eng { top: calc(66px + env(safe-area-inset-top)); max-height: 44vh; }
 }
+
+/* sound card: drops down under the sound button */
+.ui-sound { right: calc(66px + env(safe-area-inset-right)); width: min(250px, calc(100vw - 28px)); }
+.ui-sound .ui-action { width: 100%; margin-top: 14px; }
