@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { NOISE } from './glsl';
 import type { ShallowWaterSolver } from '../physics/solver';
+import { WETMAP_SIZE } from './wetmap';
 
 export interface GroundStyle {
   moss: THREE.Color;
@@ -31,6 +32,7 @@ export const FOREST_GROUND: GroundStyle = {
 export function createGroundMaterial(
   solver: ShallowWaterSolver,
   caustics: THREE.Texture,
+  wetMap: THREE.Texture,
   style: GroundStyle,
   bed: boolean,
 ) {
@@ -42,6 +44,8 @@ export function createGroundMaterial(
   const uniforms = {
     uShape: { value: solver.shapeTexture },
     uCaustics: { value: caustics },
+    uWetMap: { value: wetMap },
+    uWetSize: { value: new THREE.Vector2(...WETMAP_SIZE) },
     uOrigin: { value: new THREE.Vector2(...solver.origin) },
     uExtent: { value: new THREE.Vector2(...solver.extent) },
     uMoss: { value: style.moss },
@@ -60,8 +64,8 @@ export function createGroundMaterial(
         '#include <common>',
         /* glsl */ `#include <common>
         varying vec3 vWPos;
-        uniform sampler2D uShape, uCaustics;
-        uniform vec2 uOrigin, uExtent;
+        uniform sampler2D uShape, uCaustics, uWetMap;
+        uniform vec2 uOrigin, uExtent, uWetSize;
         uniform vec3 uMoss, uEarth, uStone, uLitter, uMud;
         ${NOISE}
         float gWet; float gGloss; float gSdf; vec2 gUv;`,
@@ -72,13 +76,12 @@ export function createGroundMaterial(
         gUv = (vWPos.xz - uOrigin) / uExtent;
         bool inDomain = all(greaterThan(gUv, vec2(0.0))) && all(lessThan(gUv, vec2(1.0)));
         gSdf = inDomain ? texture2D(uShape, gUv).r : 1.0;
-        // The bed mesh continues 6 cm past the edge at ground level and the
-        // ground mesh starts 2 cm out. In the overlap both are flat at y = 0
-        // and shaded identically, so there is no crack at the seam.
-        #ifdef BED
-          if (gSdf > 0.06) discard;
-        #else
-          if (gSdf < 0.02) discard;
+        // The bed mesh covers the simulation area plus a 0.5 m apron at ground
+        // level; the big ground plane has a rectangular hole 0.25 m inside the
+        // apron. Where they overlap both are flat at y = 0 and shaded by the
+        // same code, so the seam is invisible and can never crack open.
+        #ifndef BED
+          if (all(greaterThan(vWPos.xz, uOrigin - 0.25)) && all(lessThan(vWPos.xz, uOrigin + uExtent + 0.25))) discard;
         #endif
         vec2 p = vWPos.xz;
         // forest floor: soft moss with gentle patches of earth and needle
@@ -101,6 +104,10 @@ export function createGroundMaterial(
         // wet ring: width varies along the edge
         float ring = 0.035 + 0.06 * vnoise(p * 4.0);
         gWet = 1.0 - smoothstep(0.0, ring, gSdf);
+        // splashes that landed on the ground (drying over time)
+        vec2 wuv = vec2(vWPos.x / uWetSize.x + 0.5, 0.5 - vWPos.z / uWetSize.y);
+        if (all(greaterThan(wuv, vec2(0.0))) && all(lessThan(wuv, vec2(1.0))))
+          gWet = max(gWet, texture2D(uWetMap, wuv).r * 0.9);
         // Under water there is no air–film sheen: the stone–water interface
         // reflects very little, so the glossiness applies only above water.
         gGloss = gWet * smoothstep(-0.004, 0.004, gSdf);
@@ -111,7 +118,7 @@ export function createGroundMaterial(
       .replace(
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.62, gGloss);`,
+        roughnessFactor = mix(roughnessFactor, 0.78, gGloss);`,
       )
       .replace(
         '#include <lights_fragment_end>',
@@ -145,14 +152,17 @@ function bilinear(data: Float32Array, nx: number, nz: number, fi: number, fj: nu
   );
 }
 
+const BED_APRON = 0.5; // [m] flat ground-level margin around the simulation area
+
 /** The bed: a grid over the domain pushed down to y = −H(x, z). */
 export function createBed(solver: ShallowWaterSolver, material: THREE.Material) {
   const { nx, nz } = solver.grid;
   const [ox, oz] = solver.origin;
   const [ex, ez] = solver.extent;
-  // ~9 mm triangles, fine enough that the bed is flat by the overlap zone
-  const sx = Math.ceil(ex / 0.009), sz = Math.ceil(ez / 0.009);
-  const geo = new THREE.PlaneGeometry(ex, ez, sx, sz);
+  // ~9 mm triangles over the puddle (plus the apron, which is flat)
+  const W = ex + 2 * BED_APRON, D = ez + 2 * BED_APRON;
+  const sx = Math.ceil(W / 0.009), sz = Math.ceil(D / 0.009);
+  const geo = new THREE.PlaneGeometry(W, D, sx, sz);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const data = solver.shape.data;

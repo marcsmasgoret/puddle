@@ -166,7 +166,11 @@ void main() {
     // Unconditionally stable even when c_f is huge (honey, very shallow edges).
     float hFace = 0.5 * (H(c) + H(W)) + 0.5 * (eta + etaW);
     u /= 1.0 + uDt * frictionRate(hFace);
-    uNew = clamp(u, -uUMax, uUMax);
+    // safety cap on speed, applied to the velocity *vector* so it has no
+    // preferred direction (clamping u and v separately would favour the grid
+    // diagonals and turn round waves square)
+    float sp = length(vec2(u, vHere));
+    uNew = sp > uUMax ? u * uUMax / sp : u;
   }
 
   // ── v on the face between cell Sth and cell c ───────────────────────────
@@ -185,7 +189,8 @@ void main() {
     v += uDt * (gravity + capillary + viscous);
     float hFace = 0.5 * (H(c) + H(Sth)) + 0.5 * (eta + etaS);
     v /= 1.0 + uDt * frictionRate(hFace);
-    vNew = clamp(v, -uUMax, uUMax);
+    float sp = length(vec2(uHere, v));
+    vNew = sp > uUMax ? v * uUMax / sp : v;
   }
 
   // Faces touching a dry cell keep zero velocity: no flow through the wall
@@ -281,6 +286,10 @@ void main() {
 // so the slap digs a dent and throws up a ring that then propagates.
 //
 // Stirring adds a direct, Gaussian-weighted velocity Δu = w·exp(−r²/R²).
+//
+// Volume sources: spray leaving the surface (negative) or drops landing
+// (positive) change η by a Gaussian of the right total volume:
+//   Δη = A·exp(−r²/R²),  A = ΔV / (π R²).
 // ─────────────────────────────────────────────────────────────────────────────
 export const MAX_IMPULSES = 8;
 
@@ -289,7 +298,8 @@ ${COMMON}
 #define MAX_IMPULSES ${MAX_IMPULSES}
 uniform int uCount;
 uniform vec4 uImp[MAX_IMPULSES];   // (x, z, R, φ = Π₀/ρ)
-uniform vec4 uPush[MAX_IMPULSES];  // (Δu_x, Δu_z, 0, 0)
+uniform vec4 uPush[MAX_IMPULSES];  // (Δu_x, Δu_z, A = ΔV/(πR²), 0)
+uniform float uHMin;
 uniform vec2 uOrigin;              // world xz of the grid corner
 
 void main() {
@@ -300,6 +310,7 @@ void main() {
   vec2 pv = uOrigin + vec2(float(c.x) + 0.5, float(c.y)) * uDx;
   bool openU = wet(c) && wet(c - ivec2(1, 0));
   bool openV = wet(c) && wet(c - ivec2(0, 1));
+  vec2 pc = uOrigin + (vec2(c) + 0.5) * uDx;
 
   for (int k = 0; k < MAX_IMPULSES; k++) {
     if (k >= uCount) break;
@@ -310,7 +321,12 @@ void main() {
     float gv = exp(-dot(dv, dv) / R2);
     if (openU) s.g += 2.0 * du.x / R2 * I.w * gu + uPush[k].x * gu;
     if (openV) s.b += 2.0 * dv.y / R2 * I.w * gv + uPush[k].y * gv;
+    if (wet(c)) {
+      vec2 dc = pc - I.xy;
+      s.r += uPush[k].z * exp(-dot(dc, dc) / R2);
+    }
   }
+  if (wet(c)) s.r = max(s.r, -H(c) + uHMin);
   gl_FragColor = s;
 }
 `;

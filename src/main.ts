@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { WATER } from './physics/fluids';
 import { makeGrid, pickResolution } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
-import { ShallowWaterSolver } from './physics/solver';
+import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
+import { computeSlap, handSpeed } from './physics/slap';
+import { stirImpulses } from './physics/stir';
+import { Droplets } from './physics/droplets';
+import { createDropletMesh } from './render/droplets';
+import { WetMap } from './render/wetmap';
+import { createPanel } from './ui/panel';
+import { settings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
 import { createGroundMaterial, createGround, createBed, FOREST_GROUND } from './render/ground';
@@ -63,8 +70,10 @@ envScene.add(createSky(palette).mesh);
 scene.environment = pmrem.fromScene(envScene, 0.02).texture;
 scene.environmentIntensity = 0.6;
 
-scene.add(createGround(createGroundMaterial(solver, caustics.target.texture, FOREST_GROUND, false)));
-scene.add(createBed(solver, createGroundMaterial(solver, caustics.target.texture, FOREST_GROUND, true)));
+const wetMap = new WetMap();
+const groundMesh = createGround(createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, false));
+const bedMesh = createBed(solver, createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, true));
+scene.add(groundMesh, bedMesh);
 buildForest(scene, palette, [shape.halfX, shape.halfZ], (x, z) => solver.sdfAt(x, z));
 
 const waterScene = new THREE.Scene();
@@ -73,6 +82,13 @@ water.uniforms.uSunDir.value.copy(sunDir);
 water.uniforms.uSunColor.value.copy(palette.sunColor).multiplyScalar(palette.sunIntensity);
 water.uniforms.uAmbient.value.copy(palette.hemiSky).multiplyScalar(palette.hemiIntensity);
 waterScene.add(water.mesh);
+
+const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
+const drops = new Droplets(fluid, isWater);
+const dropMesh = createDropletMesh(drops, water.uniforms);
+dropMesh.material.uniforms.uSkyTop.value.copy(palette.skyTop);
+dropMesh.material.uniforms.uSkyHorizon.value.copy(palette.skyHorizon);
+waterScene.add(dropMesh.mesh);
 
 const pipeline = new PuddleRenderer(renderer, scene, waterScene, camera, water.uniforms, phoneish ? 0 : 4);
 
@@ -90,7 +106,58 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-attachPointer(canvas, camera, solver);
+// ── interaction ──────────────────────────────────────────────────────────────
+const panel = createPanel();
+
+/**
+ * A falling drop of radius r hitting the water at speed v hands its momentum
+ * m·v to the surface as a pressure impulse over a footprint a few drop radii
+ * wide (never narrower than the grid can resolve), and adds its volume.
+ */
+function dropImpact(x: number, z: number, r: number, v: number): Impulse {
+  const volume = (4 / 3) * Math.PI * r ** 3;
+  const R = Math.max(2.5 * r, 1.5 * grid.dx);
+  return { x, z, radius: R, pressureImpulse: (fluid.density * volume * v) / (Math.PI * R * R), volume };
+}
+
+let lastSlap = { froude: 0, sprayMl: 0 };
+function slapAt(x: number, z: number) {
+  const slap = computeSlap(handSpeed(settings.strength), solver.depthAt(x, z), fluid, GRAVITY);
+  const launched = slap.sprayMass > 0 ? drops.spray(x, z, slap.radius, slap.sprayMass, slap.sprayMeanSpeed) : 0;
+  solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
+  lastSlap = { froude: +slap.froudeRequested.toFixed(2), sprayMl: +(launched * 1e6).toFixed(1) };
+}
+
+attachPointer(canvas, camera, {
+  isWater,
+  onPressAnywhere: () => {
+    if (!panel.isOpen()) return false;
+    panel.close();
+    return true;
+  },
+  onSlap: slapAt,
+  onStir(x0, z0, x1, z1, dt) {
+    for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
+  },
+});
+
+// drops that land on the ground drain back into the puddle (see droplets.ts)
+let drainBack = 0;
+function updateDrops(dt: number) {
+  for (const L of drops.step(dt)) {
+    if (L.onWater) {
+      solver.addImpulse(dropImpact(L.x, L.z, L.radius, L.speed));
+    } else {
+      wetMap.stamp(L.x, L.z, L.radius * (4 + 3 * Math.random()));
+      drainBack += L.volume;
+    }
+  }
+  if (drainBack > 0 && drops.count === 0) {
+    solver.addImpulse({ x: 0, z: 0, radius: 0.6, pressureImpulse: 0, volume: drainBack });
+    drainBack = 0;
+  }
+  dropMesh.update();
+}
 
 // gentle ambient life: an occasional drip from the trees
 let nextDrip = 2 + Math.random() * 4;
@@ -101,8 +168,8 @@ function maybeDrip(t: number) {
     const x = (Math.random() * 2 - 1) * shape.halfX;
     const z = (Math.random() * 2 - 1) * shape.halfZ;
     if (solver.sdfAt(x, z) < -0.08) {
-      // a 4 mm drop falling from ~2 m: impulse ≈ ρ·v·(drop size)
-      solver.addImpulse({ x, z, radius: 0.006, pressureImpulse: 6 });
+      // a 2.5 mm drop falling a couple of metres arrives at ~5 m/s
+      solver.addImpulse(dropImpact(x, z, 0.0025, 5));
       return;
     }
   }
@@ -123,7 +190,20 @@ let paused = false;
   camera,
   shape,
   water: water.mesh,
+  scene,
+  groundMesh,
+  bedMesh,
   causticStats: () => caustics.stats(renderer),
+  drops,
+  lastSlap: () => lastSlap,
+  slapAt: (x: number, z: number, strength: number) => {
+    settings.strength = strength;
+    slapAt(x, z);
+    return lastSlap;
+  },
+  stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
+    for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
+  },
   setPaused: (p: boolean) => (paused = p),
 };
 
@@ -134,7 +214,9 @@ renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
   fps = fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
   maybeDrip(solver.simTime);
+  updateDrops(Math.min(dt, 1 / 20));
   solver.step(dt);
+  wetMap.update(renderer, Math.min(dt, 1 / 20));
   caustics.update(renderer, sunDir);
   pipeline.render(dt);
   stats.fps = Math.round(fps);

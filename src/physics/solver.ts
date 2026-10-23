@@ -46,6 +46,8 @@ export interface Impulse {
   pressureImpulse: number;
   /** direct velocity added at the centre [m/s] */
   push?: [number, number];
+  /** volume added (+) or removed (−) [m³] */
+  volume?: number;
 }
 
 export class ShallowWaterSolver {
@@ -157,6 +159,7 @@ export class ShallowWaterSolver {
       uImp: { value: Array.from({ length: MAX_IMPULSES }, () => new THREE.Vector4()) },
       uPush: { value: Array.from({ length: MAX_IMPULSES }, () => new THREE.Vector4()) },
       uOrigin: { value: new THREE.Vector2(-DOMAIN_X / 2, -DOMAIN_Z / 2) },
+      uHMin: { value: H_MIN },
     });
     this.surfaceMat = mat(surfaceFragment, {});
   }
@@ -207,7 +210,8 @@ export class ShallowWaterSolver {
       const u = this.impulseMat.uniforms;
       batch.forEach((imp, k) => {
         (u.uImp.value[k] as THREE.Vector4).set(imp.x, imp.z, imp.radius, imp.pressureImpulse / this.fluid.density);
-        (u.uPush.value[k] as THREE.Vector4).set(imp.push?.[0] ?? 0, imp.push?.[1] ?? 0, 0, 0);
+        const amp = (imp.volume ?? 0) / (Math.PI * imp.radius * imp.radius);
+        (u.uPush.value[k] as THREE.Vector4).set(imp.push?.[0] ?? 0, imp.push?.[1] ?? 0, amp, 0);
       });
       u.uCount.value = batch.length;
       this.pass(this.impulseMat);
@@ -229,6 +233,15 @@ export class ShallowWaterSolver {
   }
   get extent(): [number, number] {
     return [this.grid.nx * this.grid.dx, this.grid.nz * this.grid.dx];
+  }
+
+  /** Rest depth H at a world point [m] (0 outside the puddle). */
+  depthAt(x: number, z: number): number {
+    const { nx, nz, dx } = this.grid;
+    const i = Math.floor((x + DOMAIN_X / 2) / dx);
+    const j = Math.floor((z + DOMAIN_Z / 2) / dx);
+    if (i < 0 || j < 0 || i >= nx || j >= nz) return 0;
+    return this.shape.data[(j * nx + i) * 4];
   }
 
   /** Signed distance to the edge at a world point (CPU lookup, nearest cell). */

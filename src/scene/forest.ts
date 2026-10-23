@@ -1,7 +1,7 @@
 // Forest location: stone and moss ground, layered pine ridges fading into
 // haze, a ring of low-poly pines and mossy boulders around the puddle.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { LAYER_REFLECT } from '../render/pipeline';
 import type { Palette } from './atmosphere';
 
@@ -130,35 +130,47 @@ function setColor(g: THREE.BufferGeometry, c: THREE.Color) {
   g.setAttribute('color', new THREE.BufferAttribute(a, 3));
 }
 
-// ── a mossy boulder: noisy icosphere, moss where the surface faces up ───────
+// ── a mossy boulder: a smooth, gently lumpy pebble shape with a soft moss
+//    cap. Smooth normals keep it clean and calm (no visible facets).
 function boulderGeometry(seed: number) {
   const r = rng(seed);
-  const g = new THREE.IcosahedronGeometry(1, 2);
+  let g: THREE.BufferGeometry = new THREE.IcosahedronGeometry(1, 6);
+  g.deleteAttribute('normal');
+  g.deleteAttribute('uv');
+  g = mergeVertices(g);
   const pos = g.attributes.position as THREE.BufferAttribute;
   const v = new THREE.Vector3();
-  const k1 = [r() * 9, r() * 9, r() * 9];
+  const ph = [r() * 9, r() * 9, r() * 9, r() * 9];
+  const squash = 0.55 + 0.15 * r();
+  const stretch = 1 + 0.35 * r();
   for (let k = 0; k < pos.count; k++) {
     v.fromBufferAttribute(pos, k);
-    const d = 1 + 0.18 * Math.sin(v.x * 2.3 + k1[0]) * Math.sin(v.y * 2.9 + k1[1]) + 0.1 * Math.sin(v.z * 4.1 + k1[2]);
+    // two octaves of very low-frequency lumps: rounded, river-stone-like
+    const d =
+      1 +
+      0.16 * Math.sin(v.x * 1.5 + ph[0]) * Math.sin(v.z * 1.7 + ph[1]) +
+      0.07 * Math.sin(v.y * 2.4 + ph[2]) * Math.sin(v.x * 2.1 + ph[3]) +
+      0.1 * Math.max(0, v.x * Math.cos(ph[0]) + v.z * Math.sin(ph[0])); // lean to one side
     v.multiplyScalar(d);
-    v.y *= 0.62;
+    v.x *= stretch;
+    v.y *= squash;
     pos.setXYZ(k, v.x, v.y, v.z);
   }
-  const flat = g.index ? g.toNonIndexed() : g;
-  flat.computeVertexNormals();
-  const n = flat.attributes.normal as THREE.BufferAttribute;
+  g.computeVertexNormals();
+  const n = g.attributes.normal as THREE.BufferAttribute;
   const cols = new Float32Array(n.count * 3);
-  const stone = new THREE.Color('#6f6c64');
-  const moss = new THREE.Color('#556a2c');
+  const stone = new THREE.Color('#8a877f');
+  const moss = new THREE.Color('#617a34');
   const c = new THREE.Color();
+  const mossLine = 0.72 + 0.12 * r();
   for (let k = 0; k < n.count; k++) {
-    const up = n.getY(k);
-    c.copy(stone).lerp(moss, THREE.MathUtils.smoothstep(up, 0.35, 0.75));
-    c.multiplyScalar(0.9 + 0.2 * r());
+    // moss only on the flattest, highest part of the top
+    const top = n.getY(k) + 0.25 * pos.getY(k);
+    c.copy(stone).lerp(moss, THREE.MathUtils.smoothstep(top, mossLine, mossLine + 0.18) * 0.9);
     c.toArray(cols, k * 3);
   }
-  flat.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-  return flat;
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  return g;
 }
 
 export function buildForest(
@@ -240,7 +252,7 @@ export function buildForest(
   });
 
   // boulders: a few large ones framing the puddle, smaller ones scattered
-  const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
+  const rockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
   const [hx, hz] = puddleHalf;
   const rocks: [number, number, number, number][] = [
     [hx + 0.3, -hz * 0.35, 0.32, 1],
@@ -260,7 +272,8 @@ export function buildForest(
     }
     const mesh = new THREE.Mesh(boulderGeometry(seed), rockMat);
     mesh.scale.setScalar(s);
-    mesh.position.set(x, s * 0.18, z);
+    // sunk about a third of its height into the ground, like a real boulder
+    mesh.position.set(x, -s * 0.2, z);
     mesh.rotation.y = seed;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
