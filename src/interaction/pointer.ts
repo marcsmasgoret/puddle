@@ -2,6 +2,8 @@
 //   • tap on the water    → slap at the current strength
 //   • drag across it      → stir (the finger drags the water along)
 //   • press and hold      → push slowly into the fluid (honey, oobleck only)
+//   • skip-stones mode    → flick sideways to throw a stone
+//   • fishing mode        → tap the water to cast, tap off it to reel in
 // On fluids that can be held, a press is ambiguous at first: it becomes a
 // slap if released quickly, a stir if it moves, or a hold after 160 ms.
 // Several fingers work at once on touch screens.
@@ -22,12 +24,16 @@ export interface PointerHandlers {
   onPickDown?(id: number, ndc: THREE.Vector2): boolean;
   onCarryMove?(id: number, ndc: THREE.Vector2): void;
   onCarryEnd?(id: number, clientX: number, clientY: number): void;
+  mode(): 'slap' | 'skip' | 'fish';
+  onFlick(dx: number, dy: number, ms: number, startGround: THREE.Vector3): void;
+  onCast(x: number, z: number): void;
+  onReel(): void;
 }
 
 const HOLD_DELAY = 160; // ms
 const MOVE_SLOP = 10; // px
 
-type State = 'pending' | 'stir' | 'hold' | 'carry';
+type State = 'pending' | 'stir' | 'hold' | 'carry' | 'flick';
 interface Finger {
   x: number;
   z: number;
@@ -36,6 +42,8 @@ interface Finger {
   sy: number;
   state: State;
   timer?: number;
+  t0: number;
+  ground: THREE.Vector3;
 }
 
 export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h: PointerHandlers) {
@@ -58,13 +66,24 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
     if (h.onPressAnywhere?.()) return;
     canvas.setPointerCapture(e.pointerId);
     if (h.onPickDown?.(e.pointerId, toNdc(e))) {
-      fingers.set(e.pointerId, { x: 0, z: 0, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'carry' });
+      fingers.set(e.pointerId, { x: 0, z: 0, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'carry', t0: e.timeStamp, ground: new THREE.Vector3() });
       return;
     }
     const p = toWorld(e);
     if (!p) return;
-    const f: Finger = { x: p.x, z: p.z, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'stir' };
+    const f: Finger = { x: p.x, z: p.z, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'stir', t0: e.timeStamp, ground: p.clone() };
     fingers.set(e.pointerId, f);
+    const mode = h.mode();
+    if (mode === 'skip') {
+      f.state = 'flick';
+      return;
+    }
+    if (mode === 'fish') {
+      if (h.isWater(p.x, p.z)) h.onCast(p.x, p.z);
+      else h.onReel();
+      f.state = 'carry'; // swallow the rest of this press
+      return;
+    }
     if (!h.isWater(p.x, p.z)) return;
     if (!h.canHold()) {
       h.onSlap(p.x, p.z);
@@ -85,6 +104,7 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
       h.onCarryMove?.(e.pointerId, toNdc(e));
       return;
     }
+    if (f.state === 'flick') return;
     if (f.state === 'pending' && Math.hypot(e.clientX - f.sx, e.clientY - f.sy) > MOVE_SLOP) {
       f.state = 'stir';
       clearTimeout(f.timer);
@@ -110,6 +130,11 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
     if (f.state === 'pending') h.onSlap(f.x, f.z);
     if (f.state === 'hold') h.onHoldEnd(e.pointerId);
     if (f.state === 'carry') h.onCarryEnd?.(e.pointerId, e.clientX, e.clientY);
+    if (f.state === 'flick') {
+      const dx = e.clientX - f.sx, dy = e.clientY - f.sy, ms = e.timeStamp - f.t0;
+      if (Math.hypot(dx, dy) > 30 && ms < 700) h.onFlick(dx, dy, ms, f.ground);
+      else if (h.isWater(f.x, f.z)) h.onSlap(f.x, f.z);
+    }
     fingers.delete(e.pointerId);
   };
   canvas.addEventListener('pointerup', end);

@@ -14,6 +14,10 @@ import { createPanel } from './ui/panel';
 import { createFullscreenButton } from './ui/fullscreen';
 import { createDrawer } from './ui/drawer';
 import { Toys } from './scene/toys';
+import { Stones } from './scene/stones';
+import { Fishing } from './scene/fishing';
+import { STONE } from './physics/skipping';
+import { toast } from './ui/toast';
 import { settings, saveSettings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
@@ -137,6 +141,57 @@ const toys = new Toys(scene, solver, renderer, camera, {
     solver.addImpulse({ x, z, radius: hit.radius, pressureImpulse: hit.pressureImpulse, volume: -launched });
   },
 });
+// ── skipping stones ──────────────────────────────────────────────────────────
+const stones = new Stones(
+  scene,
+  { isFluid: isWater, floorAt: (x, z) => toys.floorAt(x, z), halfX: shape.halfX, halfZ: shape.halfZ },
+  (e) => {
+    if (!isWater(e.x, e.z)) return;
+    const R = Math.max(STONE.radius * 1.5, 1.5 * grid.dx);
+    if (e.kind === 'clatter') {
+      // a jammed impact on oobleck: a brief matte patch, no spray
+      jamMarks.unshift({ x: e.x, z: e.z, t: solver.simTime, s: 0.8 });
+      jamMarks.length = Math.min(jamMarks.length, 4);
+      return;
+    }
+    // the momentum the stone gave the fluid becomes a ripple; a hard hit
+    // throws a little spray (same impact model as a slap)
+    const hit = computeSlap(e.speed, solver.depthAt(e.x, e.z), fluid, GRAVITY, STONE.radius, e.momentum);
+    const launched = hit.sprayMass > 0 ? drops.spray(e.x, e.z, R, hit.sprayMass, hit.sprayMeanSpeed) : 0;
+    solver.addImpulse({ x: e.x, z: e.z, radius: R, pressureImpulse: Math.max(hit.pressureImpulse, e.momentum / (Math.PI * R * R)), volume: -launched });
+    if (e.kind === 'skip') {
+      const n = stones.current?.skips ?? 0;
+      toast(`<b>${n}</b> ${n === 1 ? 'skip' : 'skips'}`, 1800);
+    }
+  },
+  (skips) => {
+    const prev = settings.best[fluid.id] ?? 0;
+    const record = skips > prev;
+    if (record) {
+      settings.best[fluid.id] = skips;
+      saveSettings();
+    }
+    const word = skips === 1 ? 'skip' : 'skips';
+    toast(
+      skips === 0
+        ? `straight in <small>· best ${prev} on ${fluid.name.toLowerCase()}</small>`
+        : `<b>${skips}</b> ${word} ${record ? '<small>· new best!</small>' : `<small>· best ${prev}</small>`}`,
+      3200,
+    );
+  },
+);
+
+// ── fishing ──────────────────────────────────────────────────────────────────
+const fishing = new Fishing(scene, toys, camera, () => {});
+
+function setMode(m: 'slap' | 'skip' | 'fish') {
+  settings.mode = m;
+  saveSettings();
+  if (m !== 'fish') fishing.reelIn(true);
+  if (m === 'skip') toast('flick sideways across the puddle <small>· about 20° up is the magic angle</small>', 4200);
+  if (m === 'fish') toast('tap the water to cast <small>· tap the grass to reel in</small>', 4200);
+}
+
 const ndcAt = (cx: number, cy: number) => {
   const r = canvas.getBoundingClientRect();
   return new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
@@ -216,7 +271,13 @@ attachPointer(canvas, camera, {
     drawer.close();
     return true;
   },
-  onPickDown: (id, ndc) => toys.pick(id, ndc),
+  onPickDown: (id, ndc) => settings.mode !== 'fish' && toys.pick(id, ndc),
+  mode: () => settings.mode,
+  onFlick(dx, dy, ms, start) {
+    stones.throwFrom({ dx, dy, ms, start }, canvas.clientWidth);
+  },
+  onCast: (x, z) => fishing.cast(x, z),
+  onReel: () => fishing.reelIn(),
   onCarryMove: (id, ndc) => toys.moveCarry(id, ndc),
   onCarryEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onSlap: slapAt,
@@ -300,6 +361,12 @@ panel.addChoice<FluidId>(
     applyFluid(FLUIDS[id]);
   },
 );
+panel.addChoice<'slap' | 'skip' | 'fish'>(
+  'Play',
+  [['slap', 'Slap'], ['skip', 'Skip stones'], ['fish', 'Fishing']],
+  () => settings.mode,
+  setMode,
+);
 applyFluid(fluid);
 
 document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
@@ -330,6 +397,10 @@ let paused = false;
   },
   setFluid: (id: FluidId) => applyFluid(FLUIDS[id]),
   toys,
+  stones,
+  fishing,
+  setMode,
+  flick: (dx: number, dy: number, ms: number, z = 0) => stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth),
   spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
   hold: (id: number, x: number, z: number) => held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) }),
   release: (id: number) => held.delete(id),
@@ -348,7 +419,9 @@ renderer.setAnimationLoop(() => {
   maybeDrip(solver.simTime);
   updateHolds(Math.min(dt, 1 / 20));
   updateJamMarks();
-  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY);
+  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY, (t) => fishing.forceFor(t));
+  stones.update(Math.min(dt, 1 / 20), fluid, GRAVITY);
+  fishing.update(Math.min(dt, 1 / 20));
   solver.setLoads([...fingerLoads, ...toyLoads]);
   updateDrops(Math.min(dt, 1 / 20));
   solver.step(dt);

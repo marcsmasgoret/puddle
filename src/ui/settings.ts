@@ -8,9 +8,13 @@ export interface Settings {
   /** slap strength slider, 0…1 */
   strength: number;
   fluid: FluidId;
+  mode: 'slap' | 'skip' | 'fish';
+  /** best skip count per fluid */
+  best: Partial<Record<FluidId, number>>;
+  hintsSeen: string[];
 }
 
-const defaults: Settings = { strength: 0.35, fluid: 'water' };
+const defaults: Settings = { strength: 0.35, fluid: 'water', mode: 'slap', best: {}, hintsSeen: [] };
 
 function load(): Settings {
   try {

@@ -12,6 +12,8 @@
 //                a millimetre.
 //  Paper boat    12 cm folded from A5 printer paper (80 g/m² × 0.031 m²
 //                ≈ 2.5 g) → 3 g. Almost weightless: rides on its fold line.
+//  Bobber        2.4 cm fishing float, 3.6 g: half the weight of the water
+//                its sphere would displace, so it rides half under.
 //  Toy sailboat  16 cm light wooden hull with a lead strip along the bottom,
 //                45 g in all (draft ≈ 1 cm, so it clears a 1.5 cm puddle).
 //                The low centre of mass keeps the tall mast upright
@@ -20,7 +22,7 @@
 import * as THREE from 'three';
 import type { BodyDef, HullSample } from './rigidbody';
 
-export type ToyKind = 'duck' | 'paperBoat' | 'sailboat';
+export type ToyKind = 'duck' | 'paperBoat' | 'sailboat' | 'bobber';
 
 function voxelize(inside: (p: THREE.Vector3) => boolean, min: THREE.Vector3, max: THREE.Vector3, s: number, com: THREE.Vector3): HullSample[] {
   const out: HullSample[] = [];
@@ -56,7 +58,14 @@ export const SAIL = {
   mass: 0.045,
 };
 
+export const BOBBER = { r: 0.012, mass: 0.0036, com: new THREE.Vector3(0, -0.003, 0) };
+
 export function bodyDef(kind: ToyKind): BodyDef {
+  if (kind === 'bobber') {
+    const { r, mass, com } = BOBBER;
+    const samples = voxelize((p) => p.length() <= r, new THREE.Vector3(-r, -r, -r), new THREE.Vector3(r, r, r), 0.004, com);
+    return { mass, inertia: ellipsoidInertia(mass, r, r, r, 1.5), samples, bottom: -r - com.y, radius: r };
+  }
   if (kind === 'duck') {
     const { body, head, com, mass } = DUCK;
     const inside = (p: THREE.Vector3) => {

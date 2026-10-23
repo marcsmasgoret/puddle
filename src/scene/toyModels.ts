@@ -3,7 +3,7 @@
 // offset so its origin is the centre of mass.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DUCK, PAPER, SAIL, type ToyKind } from '../physics/toyBodies';
+import { DUCK, PAPER, SAIL, BOBBER, type ToyKind } from '../physics/toyBodies';
 import { LAYER_REFLECT } from '../render/pipeline';
 
 function tinted(g: THREE.BufferGeometry, color: string) {
@@ -116,7 +116,19 @@ function sailboat() {
   return { geo, mat, com: SAIL.com };
 }
 
-const builders = { duck, paperBoat: paperBoat, sailboat };
+function bobber() {
+  const { r } = BOBBER;
+  const top = new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+  const bottom = new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+  const band = new THREE.CylinderGeometry(r * 1.01, r * 1.01, r * 0.18, 24, 1, true);
+  const stick = new THREE.CylinderGeometry(0.0012, 0.0016, 0.022, 8);
+  stick.translate(0, r + 0.009, 0);
+  const geo = mergeGeometries([tinted(top, '#e8392f'), tinted(bottom, '#f4f1ea'), tinted(band, '#1f1f24'), tinted(stick, '#e8392f')]);
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.8 });
+  return { geo, mat, com: BOBBER.com };
+}
+
+const builders = { duck, paperBoat: paperBoat, sailboat, bobber };
 const cache = new Map<ToyKind, { geo: THREE.BufferGeometry; mat: THREE.Material }>();
 
 export function toyMesh(kind: ToyKind) {

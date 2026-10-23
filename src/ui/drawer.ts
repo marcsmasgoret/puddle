@@ -1,7 +1,10 @@
 // The toy drawer: a small button on the left opens a glass tray with the
 // toys. Drag one out onto the scene to drop it in; tap one to drop it in the
 // middle of the puddle; drag a toy back onto the button to put it away.
-import type { ToyKind } from '../physics/toyBodies';
+import type { ToyKind as AnyToy } from '../physics/toyBodies';
+
+/** toys offered in the drawer (the bobber belongs to fishing mode) */
+type ToyKind = Exclude<AnyToy, 'bobber'>;
 
 export interface DrawerHandlers {
   /** a drag out of the drawer started (pointer id, client coords) */
