@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+# raw, uncompressed source assets (only compressed versions are committed)
+assets-src/

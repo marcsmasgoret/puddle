@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+# Every push to main publishes:
+#   /puddle/              -> latest build
+#   /puddle/c/<sha7>/     -> frozen snapshot of that commit (last 30 kept)
+#   /puddle/builds.html   -> list of all snapshots
+# The site is assembled on the gh-pages branch, which Pages serves.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build latest and snapshot
+        run: |
+          SHORT="${GITHUB_SHA::7}"
+          echo "SHORT=$SHORT" >> "$GITHUB_ENV"
+          VITE_BASE=/puddle/ VITE_COMMIT=$SHORT npx vite build --outDir dist/latest
+          VITE_BASE=/puddle/c/$SHORT/ VITE_COMMIT=$SHORT npx vite build --outDir dist/snap
+          npx tsc --noEmit
+
+      - name: Check out gh-pages into ./site
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git worktree add -B gh-pages site origin/gh-pages
+          else
+            git worktree add --orphan -b gh-pages site
+          fi
+
+      - name: Assemble site
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: node scripts/assemble-pages.mjs site dist/latest dist/snap "$SHORT"
+
+      - name: Publish
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy $SHORT" || echo "nothing to commit"
+          git push origin gh-pages

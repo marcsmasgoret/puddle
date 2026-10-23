@@ -1,0 +1,65 @@
+:root {
+  --ink: #3b2f3a;
+  --ink-soft: rgba(59, 47, 58, 0.55);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #f3c9a8;
+  /* clean touch: no scroll, no pinch-zoom, no text selection, no tap flash */
+  overscroll-behavior: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+#title {
+  position: fixed;
+  top: 14vh;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--ink);
+  pointer-events: none;
+}
+
+#title h1 {
+  margin: 0;
+  font-weight: 300;
+  font-size: clamp(32px, 7vw, 64px);
+  letter-spacing: 0.35em;
+  text-indent: 0.35em;
+  text-transform: uppercase;
+}
+
+#title p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+#build {
+  position: fixed;
+  right: 12px;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  font: 11px ui-monospace, Menlo, Consolas, monospace;
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
