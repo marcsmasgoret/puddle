@@ -80,6 +80,18 @@ export class WetMap {
     this.scene.add(this.splats);
   }
 
+  /** Dry everything instantly (used when the fluid changes). */
+  clear(renderer: THREE.WebGLRenderer) {
+    renderer.setRenderTarget(this.target);
+    const prev = renderer.getClearColor(new THREE.Color());
+    const a = renderer.getClearAlpha();
+    renderer.setClearColor(0x000000, 0);
+    renderer.clear(true, false, false);
+    renderer.setClearColor(prev, a);
+    renderer.setRenderTarget(null);
+    this.pending.length = 0;
+  }
+
   /** Queue a wet blot of radius r [m] at world (x, z). */
   stamp(x: number, z: number, r: number) {
     this.pending.push({ x, z, r });

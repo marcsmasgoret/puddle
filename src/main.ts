@@ -1,18 +1,20 @@
 import * as THREE from 'three';
-import { WATER } from './physics/fluids';
+import { FLUIDS, type FluidId, type FluidProperties } from './physics/fluids';
 import { makeGrid, pickResolution } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
 import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
+import { pressLoad, type HeldFinger } from './physics/press';
 import { computeSlap, handSpeed } from './physics/slap';
 import { stirImpulses } from './physics/stir';
 import { Droplets } from './physics/droplets';
 import { createDropletMesh } from './render/droplets';
 import { WetMap } from './render/wetmap';
 import { createPanel } from './ui/panel';
-import { settings } from './ui/settings';
+import { createFullscreenButton } from './ui/fullscreen';
+import { settings, saveSettings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
-import { createGroundMaterial, createGround, createBed, FOREST_GROUND } from './render/ground';
+import { createGroundMaterial, createGround, createBed, applyGroundFluid, FOREST_GROUND } from './render/ground';
 import { PuddleRenderer, LAYER_REFLECT } from './render/pipeline';
 import { createSky, LATE_AFTERNOON, sunDirection } from './scene/atmosphere';
 import { buildForest } from './scene/forest';
@@ -30,13 +32,13 @@ renderer.shadowMap.autoUpdate = false;
 
 const phoneish = navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.height) < 900;
 const palette = LATE_AFTERNOON;
-const fluid = WATER;
+let fluid: FluidProperties = FLUIDS[settings.fluid] ?? FLUIDS.water;
 
 // ── physics ──────────────────────────────────────────────────────────────────
 const grid = makeGrid(pickResolution());
-const shape = buildPuddle(grid, fluid.restDepth);
+const shape = buildPuddle(grid);
 const solver = new ShallowWaterSolver(renderer, shape, fluid);
-const caustics = new Caustics(solver, fluid.refractiveIndex, phoneish ? 1 : 2);
+const caustics = new Caustics(solver, 1.333, phoneish ? 1 : 2);
 
 // ── scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
@@ -71,20 +73,30 @@ scene.environment = pmrem.fromScene(envScene, 0.02).texture;
 scene.environmentIntensity = 0.6;
 
 const wetMap = new WetMap();
-const groundMesh = createGround(createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, false));
-const bedMesh = createBed(solver, createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, true));
+const groundMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, false);
+const bedMat = createGroundMaterial(solver, caustics.target.texture, wetMap.target.texture, FOREST_GROUND, true);
+const groundMesh = createGround(groundMat);
+const bedMesh = createBed(solver, bedMat);
 scene.add(groundMesh, bedMesh);
 buildForest(scene, palette, [shape.halfX, shape.halfZ], (x, z) => solver.sdfAt(x, z));
 
 const waterScene = new THREE.Scene();
-const water = createWaterMesh(solver, fluid);
+const water = createWaterMesh(solver);
 water.uniforms.uSunDir.value.copy(sunDir);
 water.uniforms.uSunColor.value.copy(palette.sunColor).multiplyScalar(palette.sunIntensity);
 water.uniforms.uAmbient.value.copy(palette.hemiSky).multiplyScalar(palette.hemiIntensity);
 waterScene.add(water.mesh);
 
 const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
-const drops = new Droplets(fluid, isWater);
+// unit vector pointing down the sdf gradient (toward the puddle)
+const towardWater = (x: number, z: number): [number, number] => {
+  const e = 0.02;
+  const gx = solver.sdfAt(x + e, z) - solver.sdfAt(x - e, z);
+  const gz = solver.sdfAt(x, z + e) - solver.sdfAt(x, z - e);
+  const l = Math.hypot(gx, gz) || 1;
+  return [-gx / l, -gz / l];
+};
+const drops = new Droplets(fluid, isWater, towardWater);
 const dropMesh = createDropletMesh(drops, water.uniforms);
 dropMesh.material.uniforms.uSkyTop.value.copy(palette.skyTop);
 dropMesh.material.uniforms.uSkyHorizon.value.copy(palette.skyHorizon);
@@ -108,6 +120,7 @@ resize();
 
 // ── interaction ──────────────────────────────────────────────────────────────
 const panel = createPanel();
+createFullscreenButton();
 
 /**
  * A falling drop of radius r hitting the water at speed v hands its momentum
@@ -121,7 +134,23 @@ function dropImpact(x: number, z: number, r: number, v: number): Impulse {
 }
 
 let lastSlap = { froude: 0, sprayMl: 0 };
+// recent impacts on oobleck, for the brief matte "jammed" patch they leave
+const jamMarks: { x: number; z: number; t: number; s: number }[] = [];
+function updateJamMarks() {
+  const now = solver.simTime;
+  const marks = water.uniforms.uJamMarks.value as THREE.Vector4[];
+  for (let k = 0; k < 4; k++) {
+    const m = jamMarks[k];
+    if (!m) { marks[k].set(0, 0, 1, 0); continue; }
+    marks[k].set(m.x, m.z, 0.075, m.s * Math.exp(-(now - m.t) / 0.4));
+  }
+}
+
 function slapAt(x: number, z: number) {
+  if (fluid.rheology.kind === 'shearThickening') {
+    jamMarks.unshift({ x, z, t: solver.simTime, s: Math.min(1, 0.4 + settings.strength) });
+    jamMarks.length = Math.min(jamMarks.length, 4);
+  }
   const slap = computeSlap(handSpeed(settings.strength), solver.depthAt(x, z), fluid, GRAVITY);
   const launched = slap.sprayMass > 0 ? drops.spray(x, z, slap.radius, slap.sprayMass, slap.sprayMeanSpeed) : 0;
   solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
@@ -130,6 +159,20 @@ function slapAt(x: number, z: number) {
 
 attachPointer(canvas, camera, {
   isWater,
+  canHold: () => fluid.holdable,
+  onHoldStart(id, x, z) {
+    held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) });
+  },
+  onHoldMove(id, x, z) {
+    const f = held.get(id);
+    if (!f || !isWater(x, z)) return;
+    f.x = x;
+    f.z = z;
+    f.depth = Math.max(solver.depthAt(x, z), 0.002);
+  },
+  onHoldEnd(id) {
+    held.delete(id);
+  },
   onPressAnywhere: () => {
     if (!panel.isOpen()) return false;
     panel.close();
@@ -175,6 +218,48 @@ function maybeDrip(t: number) {
   }
 }
 
+// ── fluids ───────────────────────────────────────────────────────────────────
+function applyFluid(f: FluidProperties) {
+  fluid = f;
+  solver.setFluid(f);
+  water.applyFluid(f);
+  drops.fluid = f;
+  drops.clear();
+  drainBack = 0;
+  held.clear();
+  const o = f.optics;
+  caustics.setOptics(o.kind === 'dielectric' ? o.ior : null, o.kind === 'dielectric' ? o.absorption : [0, 0, 0]);
+  const ringRough = f.id === 'honey' ? 0.3 : f.id === 'oobleck' ? 0.9 : 0.78;
+  for (const m of [groundMat, bedMat]) applyGroundFluid(m, f.stain, f.wetsGround, ringRough);
+  const dm = dropMesh.material.uniforms;
+  dm.uMetal.value = o.kind === 'metal' ? 1 : 0;
+  if (o.kind === 'dielectric') {
+    // a drop a few mm across: absorption over its diameter
+    const d = 0.006;
+    dm.uTint.value.setRGB(...(o.absorption.map((k) => Math.exp(-k * d)) as [number, number, number]));
+  } else dm.uTint.value.setRGB(1, 1, 1);
+  wetMap.clear(renderer);
+}
+
+// fingers held down on honey / oobleck
+const held = new Map<number, HeldFinger>();
+function updateHolds(dt: number) {
+  for (const f of held.values()) f.t += dt;
+  solver.setPresses([...held.values()].map((f) => pressLoad(f, fluid.density, GRAVITY)));
+}
+
+panel.addChoice<FluidId>(
+  'Fluid',
+  [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck']],
+  () => fluid.id,
+  (id) => {
+    settings.fluid = id;
+    saveSettings();
+    applyFluid(FLUIDS[id]);
+  },
+);
+applyFluid(fluid);
+
 document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
 
 // ── main loop ────────────────────────────────────────────────────────────────
@@ -201,6 +286,9 @@ let paused = false;
     slapAt(x, z);
     return lastSlap;
   },
+  setFluid: (id: FluidId) => applyFluid(FLUIDS[id]),
+  hold: (id: number, x: number, z: number) => held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) }),
+  release: (id: number) => held.delete(id),
   stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
   },
@@ -214,6 +302,8 @@ renderer.setAnimationLoop(() => {
   const dt = clock.getDelta();
   fps = fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
   maybeDrip(solver.simTime);
+  updateHolds(Math.min(dt, 1 / 20));
+  updateJamMarks();
   updateDrops(Math.min(dt, 1 / 20));
   solver.step(dt);
   wetMap.update(renderer, Math.min(dt, 1 / 20));

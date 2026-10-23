@@ -119,3 +119,26 @@ body {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   cursor: pointer;
 }
+
+.ui-panel { max-height: calc(100vh - 90px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.ui-section + .ui-section { margin-top: 14px; }
+.ui-label { font-weight: 600; letter-spacing: 0.02em; font-size: 13px; }
+.ui-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.ui-chip {
+  font: inherit;
+  font-size: 13px;
+  color: #fff;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  text-shadow: inherit;
+  transition: background 0.15s, border-color 0.15s;
+  touch-action: manipulation;
+}
+.ui-chip:hover { background: rgba(255, 255, 255, 0.22); }
+.ui-chip.on { background: rgba(255, 255, 255, 0.85); color: #27323a; text-shadow: none; border-color: transparent; }
+.ui-buttons { display: flex; gap: 8px; }
+.ui-action { flex: 1; }
+.ui-button-2 { right: calc(66px + env(safe-area-inset-right)); }

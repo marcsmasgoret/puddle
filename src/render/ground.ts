@@ -46,6 +46,9 @@ export function createGroundMaterial(
     uCaustics: { value: caustics },
     uWetMap: { value: wetMap },
     uWetSize: { value: new THREE.Vector2(...WETMAP_SIZE) },
+    uStain: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
+    uWets: { value: 1 },
+    uRingRough: { value: 0.78 },
     uOrigin: { value: new THREE.Vector2(...solver.origin) },
     uExtent: { value: new THREE.Vector2(...solver.extent) },
     uMoss: { value: style.moss },
@@ -66,6 +69,8 @@ export function createGroundMaterial(
         varying vec3 vWPos;
         uniform sampler2D uShape, uCaustics, uWetMap;
         uniform vec2 uOrigin, uExtent, uWetSize;
+        uniform vec3 uStain;
+        uniform float uWets, uRingRough;
         uniform vec3 uMoss, uEarth, uStone, uLitter, uMud;
         ${NOISE}
         float gWet; float gGloss; float gSdf; vec2 gUv;`,
@@ -103,7 +108,7 @@ export function createGroundMaterial(
         col = mix(col, bed, underwater);
         // wet ring: width varies along the edge
         float ring = 0.035 + 0.06 * vnoise(p * 4.0);
-        gWet = 1.0 - smoothstep(0.0, ring, gSdf);
+        gWet = (1.0 - smoothstep(0.0, ring, gSdf)) * uWets;
         // splashes that landed on the ground (drying over time)
         vec2 wuv = vec2(vWPos.x / uWetSize.x + 0.5, 0.5 - vWPos.z / uWetSize.y);
         if (all(greaterThan(wuv, vec2(0.0))) && all(lessThan(wuv, vec2(1.0))))
@@ -111,25 +116,36 @@ export function createGroundMaterial(
         // Under water there is no air–film sheen: the stone–water interface
         // reflects very little, so the glossiness applies only above water.
         gGloss = gWet * smoothstep(-0.004, 0.004, gSdf);
-        // soaked ground is darker (roughly half the albedo) and glossier
-        col *= mix(1.0, 0.5, gWet);
+        // soaked ground: water darkens it (≈ half the albedo), honey leaves an
+        // amber film, oobleck a pale starch crust; mercury doesn't wet at all
+        col *= mix(vec3(1.0), uStain, gWet);
+        col = min(col, vec3(1.0));
         diffuseColor.rgb = col;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.78, gGloss);`,
+        roughnessFactor = mix(roughnessFactor, uRingRough, gGloss);`,
       )
       .replace(
         '#include <lights_fragment_end>',
         /* glsl */ `#include <lights_fragment_end>
         #ifdef BED
           // caustics only modulate direct sunlight on the bed
-          reflectedLight.directDiffuse *= mix(1.0, texture2D(uCaustics, gUv).r, step(gSdf, 0.0));
+          reflectedLight.directDiffuse *= mix(vec3(1.0), texture2D(uCaustics, gUv).rgb, step(gSdf, 0.0));
         #endif`,
       );
   };
+  mat.userData.uniforms = uniforms;
   return mat;
+}
+
+/** Point the wet ring / splat stains at the current fluid. */
+export function applyGroundFluid(mat: THREE.Material, stain: [number, number, number], wets: boolean, ringRough: number) {
+  const u = mat.userData.uniforms;
+  u.uStain.value.set(...stain);
+  u.uWets.value = wets ? 1 : 0;
+  u.uRingRough.value = ringRough;
 }
 
 /** Flat ground (large plane) with the puddle cut out. */

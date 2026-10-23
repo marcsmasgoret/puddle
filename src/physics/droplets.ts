@@ -14,10 +14,16 @@
 // When a drop comes back down:
 //  • on the puddle: its downward momentum m|v_y| becomes a small pressure
 //    impulse (a secondary ripple) and its volume is returned to the surface;
-//  • on the ground: it leaves a wet splat. Its volume is assumed to drain back
-//    into the puddle, so the puddle never slowly empties (stated assumption).
+//  • on the ground: a wetting liquid leaves a splat. Its volume is assumed to
+//    drain back into the puddle, so the puddle never slowly empties (stated
+//    assumption). A non-wetting liquid (mercury) can't soak in: the drop
+//    stays a bead, sits a moment, then rolls back down into the puddle.
+//
+// Drop size depends on the Ohnesorge number Oh = μ/√(ρσL). Low Oh (water,
+// mercury): thin sheets break into fine drops. High Oh (honey ≈ 13):
+// viscosity resists breakup, so honey throws fewer, much bigger blobs.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { FluidProperties } from './fluids';
+import { ohnesorge, type FluidProperties } from './fluids';
 
 const RHO_AIR = 1.204; // [kg/m³] at 20 °C
 const CD_SPHERE = 0.47;
@@ -38,13 +44,24 @@ export class Droplets {
   readonly vel = new Float32Array(MAX_DROPS * 3);
   readonly radius = new Float32Array(MAX_DROPS);
   readonly alive = new Uint8Array(MAX_DROPS);
+  /** 0 = flying, 1 = bead resting on the ground, 2 = bead rolling back */
+  readonly mode = new Uint8Array(MAX_DROPS);
+  private timer = new Float32Array(MAX_DROPS);
   count = 0; // number of live drops
   gravity = 9.81;
 
   constructor(
     public fluid: FluidProperties,
     private isWater: (x: number, z: number) => boolean,
+    /** unit vector pointing downhill toward the puddle at (x, z) */
+    private towardWater: (x: number, z: number) => [number, number],
   ) {}
+
+  clear() {
+    this.alive.fill(0);
+    this.mode.fill(0);
+    this.count = 0;
+  }
 
   /**
    * Throw a crown of drops carrying a total mass `mass` [kg] from a ring of
@@ -58,8 +75,9 @@ export class Droplets {
     for (let guard = 0; guard < MAX_DROPS && volume > 0; guard++) {
       const k = this.alive.indexOf(0);
       if (k < 0) break;
-      // drop radius, log-uniform between 1.2 and 4.5 mm
-      const r = 0.0012 * Math.exp(Math.random() * Math.log(4.5 / 1.2));
+      // drop radius, log-uniform between 1.2 and 4.5 mm, scaled up for
+      // viscous liquids that resist breakup
+      const r = 0.0012 * Math.exp(Math.random() * Math.log(4.5 / 1.2)) * Math.cbrt(1 + ohnesorge(this.fluid));
       const v = (4 / 3) * Math.PI * r ** 3;
       const theta = Math.random() * Math.PI * 2;
       const elev = (25 + Math.random() * 45) * (Math.PI / 180);
@@ -74,11 +92,35 @@ export class Droplets {
       this.vel[k * 3 + 2] = Math.sin(theta) * Math.cos(elev) * speed;
       this.radius[k] = r;
       this.alive[k] = 1;
+      this.mode[k] = 0;
       this.count++;
       volume -= v;
       launched += v;
     }
     return launched;
+  }
+
+  /** A bead rests, then rolls downhill (≈ 8 cm/s) until it reaches the puddle. */
+  private stepBead(k: number, dt: number, landings: Landing[]) {
+    const i = k * 3;
+    if (this.mode[k] === 1) {
+      this.timer[k] -= dt;
+      if (this.timer[k] <= 0) this.mode[k] = 2;
+      return;
+    }
+    const [dx, dz] = this.towardWater(this.pos[i], this.pos[i + 2]);
+    const speed = 0.08;
+    this.vel[i] = dx * speed;
+    this.vel[i + 2] = dz * speed;
+    this.pos[i] += this.vel[i] * dt;
+    this.pos[i + 2] += this.vel[i + 2] * dt;
+    if (this.isWater(this.pos[i], this.pos[i + 2])) {
+      const r = this.radius[k];
+      landings.push({ x: this.pos[i], z: this.pos[i + 2], radius: r, volume: (4 / 3) * Math.PI * r ** 3, speed: 0.08, onWater: true });
+      this.alive[k] = 0;
+      this.mode[k] = 0;
+      this.count--;
+    }
   }
 
   /** Advance all drops by dt; returns the drops that landed this step. */
@@ -90,6 +132,10 @@ export class Droplets {
     for (let k = 0; k < MAX_DROPS; k++) {
       if (!this.alive[k]) continue;
       const r = this.radius[k];
+      if (this.mode[k] !== 0) {
+        this.stepBead(k, dt, landings);
+        continue;
+      }
       const kDrag = (3 * RHO_AIR * CD_SPHERE) / (8 * this.fluid.density * r);
       for (let s = 0; s < sub; s++) {
         const i = k * 3;
@@ -103,6 +149,14 @@ export class Droplets {
         this.pos[i + 2] += this.vel[i + 2] * h;
         if (this.pos[i + 1] <= 0 && this.vel[i + 1] < 0) {
           const x = this.pos[i], z = this.pos[i + 2];
+          if (!this.fluid.wetsGround && !this.isWater(x, z)) {
+            // non-wetting: becomes a bead on the ground
+            this.mode[k] = 1;
+            this.timer[k] = 1.5 + Math.random() * 3;
+            this.pos[i + 1] = r * 0.75;
+            this.vel.fill(0, i, i + 3);
+            break;
+          }
           landings.push({
             x,
             z,

@@ -1,13 +1,16 @@
 // User settings, remembered between visits (localStorage, failing silently
 // in private windows).
+import type { FluidId } from '../physics/fluids';
+
 const KEY = 'puddle.settings.v1';
 
 export interface Settings {
   /** slap strength slider, 0…1 */
   strength: number;
+  fluid: FluidId;
 }
 
-const defaults: Settings = { strength: 0.35 };
+const defaults: Settings = { strength: 0.35, fluid: 'water' };
 
 function load(): Settings {
   try {

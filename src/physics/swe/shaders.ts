@@ -25,6 +25,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Helpers shared by every pass. */
+import { RHEOLOGY_GLSL } from '../rheology';
+
 const COMMON = /* glsl */ `
 precision highp float;
 precision highp int;
@@ -46,6 +48,25 @@ bool wet(ivec2 c) { return inGrid(c) && texelFetch(uShape, c, 0).b > 0.5; }
 float etaOr(ivec2 c, float fallback) { return wet(c) ? S(c).r : fallback; }
 `;
 
+// Horizontal strain rate |S| at a cell centre [1/s]:
+//   |S| = √( 2 u_x² + 2 v_z² + (u_z + v_x)² )
+// (the magnitude of the symmetric velocity-gradient tensor). It drives the
+// Smagorinsky turbulence term and oobleck's shear thickening.
+//
+// Smagorinsky: a hard slap makes flow faster than the local wave speed √(gh)
+// (Froude > 1); the water "breaks" and turns turbulent below the grid scale.
+// Those unresolved eddies act as an extra viscosity ν_t = (C_s Δx)² |S| that
+// switches on only where the flow is sharply sheared.
+const STRAIN_GLSL = /* glsl */ `
+float strainRate(ivec2 c) {
+  float ux = (S(c + ivec2(1, 0)).g - S(c).g) / uDx;
+  float vz = (S(c + ivec2(0, 1)).b - S(c).b) / uDx;
+  float uz = (S(c + ivec2(0, 1)).g - S(c - ivec2(0, 1)).g) / (2.0 * uDx);
+  float vx = (S(c + ivec2(1, 0)).b - S(c - ivec2(1, 0)).b) / (2.0 * uDx);
+  return sqrt(2.0 * ux * ux + 2.0 * vz * vz + (uz + vx) * (uz + vx));
+}
+`;
+
 export const fullscreenVertex = /* glsl */ `
 void main() {
   gl_Position = vec4(position.xy, 0.0, 1.0);
@@ -55,17 +76,22 @@ void main() {
 // ─────────────────────────────────────────────────────────────────────────────
 // VELOCITY PASS
 // ─────────────────────────────────────────────────────────────────────────────
+export const MAX_PRESSES = 4;
+
 export const velocityFragment = /* glsl */ `
 ${COMMON}
+${RHEOLOGY_GLSL}
 uniform float uDt;        // time step [s]
 uniform float uG;         // gravity [m/s²]
 uniform float uSigmaRho;  // σ/ρ [m³/s²]
-uniform float uNu;        // kinematic viscosity ν [m²/s]
 uniform float uOmegaRef;  // representative wave angular frequency [rad/s]
 uniform float uHMin;      // smallest depth used in friction [m]
 uniform float uUMax;      // velocity safety clamp [m/s]
 uniform float uExtraDamp; // optional extra linear damping [1/s] (engineering slider)
 uniform float uCs;        // Smagorinsky constant (≈ 0.17)
+uniform vec2 uOrigin;     // world xz of the grid corner
+uniform int uPressCount;
+uniform vec4 uPress[${MAX_PRESSES}]; // held fingers: (x, z, R, p₀/ρ)
 
 // Discrete Laplacian of η at a cell, ∇²η ≈ (Σ neighbours − 4η)/dx².
 float lapEta(ivec2 c) {
@@ -73,6 +99,19 @@ float lapEta(ivec2 c) {
   float s = etaOr(c + ivec2(1, 0), e) + etaOr(c - ivec2(1, 0), e)
           + etaOr(c + ivec2(0, 1), e) + etaOr(c - ivec2(0, 1), e) - 4.0 * e;
   return s / (uDx * uDx);
+}
+
+// Surface pressure from fingers pressing into the fluid, p/ρ at a cell.
+// A steady pressure p pushes the surface down until ρ g Δη balances it.
+float pressAt(ivec2 c) {
+  vec2 x = uOrigin + (vec2(c) + 0.5) * uDx;
+  float p = 0.0;
+  for (int k = 0; k < ${MAX_PRESSES}; k++) {
+    if (k >= uPressCount) break;
+    vec2 d = x - uPress[k].xy;
+    p += uPress[k].w * exp(-dot(d, d) / (uPress[k].z * uPress[k].z));
+  }
+  return p;
 }
 
 // Bilinear sample of the u component at a point p in grid coordinates.
@@ -95,43 +134,31 @@ float sampleV(vec2 p) {
   return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
 }
 
-// Horizontal strain rate |S| at a cell centre [1/s]:
-//   |S| = √( 2 u_x² + 2 v_z² + (u_z + v_x)² )
-// (the magnitude of the symmetric velocity-gradient tensor).
-float strainRate(ivec2 c) {
-  float ux = (S(c + ivec2(1, 0)).g - S(c).g) / uDx;
-  float vz = (S(c + ivec2(0, 1)).b - S(c).b) / uDx;
-  float uz = (S(c + ivec2(0, 1)).g - S(c - ivec2(0, 1)).g) / (2.0 * uDx);
-  float vx = (S(c + ivec2(1, 0)).b - S(c - ivec2(1, 0)).b) / (2.0 * uDx);
-  return sqrt(2.0 * ux * ux + 2.0 * vz * vz + (uz + vx) * (uz + vx));
-}
+${STRAIN_GLSL}
 
-// Effective horizontal viscosity = molecular ν + Smagorinsky eddy viscosity.
-// A hard slap makes flow faster than the local wave speed √(gh) (Froude > 1):
-// the water "breaks" and turns turbulent at scales smaller than one cell.
-// The Smagorinsky model represents those unresolved eddies as an extra
-// viscosity ν_t = (C_s Δx)² |S| that only switches on where the flow is
-// sharply sheared, and keeps the scheme stable through these hydraulic jumps.
-float effectiveNu(ivec2 c) {
-  return uNu + (uCs * uDx) * (uCs * uDx) * strainRate(c);
-}
-
-// Bottom friction rate c_f [1/s] for a layer of depth h.
+// Bottom friction rate c_f [1/s] for a layer of depth h and viscosity ν.
 //
-// The bed is no-slip, so a thin boundary layer forms. Two regimes:
-//  • Steady / slow flow, or a very viscous fluid: the whole depth is viscous
-//    and the velocity profile is parabolic (Poiseuille). Depth-averaging the
-//    wall shear τ = 3μū/h gives  c_f = 3ν/h².
+// The bed is no-slip, so a boundary layer forms. Two regimes:
+//  • Slow flow, or a very viscous fluid: the whole depth is viscous and the
+//    velocity profile is parabolic (Poiseuille). Depth-averaging the wall
+//    shear τ = 3μū/h gives  c_f = 3ν/h².
 //  • Oscillating wave flow in a low-viscosity fluid: shear is confined to a
 //    Stokes layer of thickness δ = √(2ν/ω) ≪ h. The time-averaged energy loss
 //    gives an equivalent linear rate  c_f ≈ √(νω/2) / h.
 // The larger of the two is used, which automatically picks the right regime
 // (δ > h ⇒ Poiseuille, δ ≪ h ⇒ Stokes layer).
-float frictionRate(float h) {
+float frictionRate(float h, float nu) {
   h = max(h, uHMin);
-  float poiseuille = 3.0 * uNu / (h * h);
-  float stokes = sqrt(uNu * uOmegaRef * 0.5) / h;
+  float poiseuille = 3.0 * nu / (h * h);
+  float stokes = sqrt(nu * uOmegaRef * 0.5) / h;
   return max(poiseuille, stokes) + uExtraDamp;
+}
+
+// Viscosity at a face: Newtonian fluids return ν; oobleck evaluates its
+// rheology at the local strain rate γ̇ = √((3|ū|/h)² + |S|²) (rheology.ts).
+float faceNu(float speed, float h, float S2) {
+  float gb = 3.0 * speed / max(h, uHMin);
+  return viscosityAt(sqrt(gb * gb + S2 * S2));
 }
 
 void main() {
@@ -142,7 +169,14 @@ void main() {
   ivec2 Sth = c - ivec2(0, 1);
 
   float lapC = lapEta(c);
-  float nuEff = effectiveNu(c);
+  float strain = strainRate(c);
+  float pC = pressAt(c);
+  // The in-plane viscous term ν∇²u is explicit. Its stability limit is
+  // ν dt/dx² ≤ ¼; above that (honey, jammed oobleck) the in-plane part is
+  // capped there. Bottom friction carries the full viscosity implicitly and
+  // dominates in a thin layer, so this cap only affects grid-scale wiggles.
+  float nuCap = 0.2 * uDx * uDx / uDt;
+  float nuTurb = (uCs * uDx) * (uCs * uDx) * strain;
 
   // ── u on the face between cell W and cell c ─────────────────────────────
   float uNew = 0.0;
@@ -155,17 +189,19 @@ void main() {
     float u = sampleU(p - uDt / uDx * vec2(s.g, vHere));
 
     float etaW = S(W).r;
+    float hFace = 0.5 * (H(c) + H(W)) + 0.5 * (eta + etaW);
+    float nu = faceNu(length(vec2(s.g, vHere)), hFace, strain);
     float gravity   = -uG * (eta - etaW) / uDx;
+    float pressure  = -(pC - pressAt(W)) / uDx;
     float capillary =  uSigmaRho * (lapC - lapEta(W)) / uDx;
     float lapU = (S(c + ivec2(1, 0)).g + S(W).g + S(c + ivec2(0, 1)).g + S(Sth).g - 4.0 * s.g) / (uDx * uDx);
-    float viscous = nuEff * lapU;
+    float viscous = min(nu + nuTurb, nuCap) * lapU;
 
-    u += uDt * (gravity + capillary + viscous);
+    u += uDt * (gravity + pressure + capillary + viscous);
 
     // bottom friction, implicit: (u_new − u)/dt = −c_f u_new  ⇒  u_new = u/(1 + c_f dt).
-    // Unconditionally stable even when c_f is huge (honey, very shallow edges).
-    float hFace = 0.5 * (H(c) + H(W)) + 0.5 * (eta + etaW);
-    u /= 1.0 + uDt * frictionRate(hFace);
+    // Unconditionally stable even when c_f is huge (honey, jammed oobleck).
+    u /= 1.0 + uDt * frictionRate(hFace, nu);
     // safety cap on speed, applied to the velocity *vector* so it has no
     // preferred direction (clamping u and v separately would favour the grid
     // diagonals and turn round waves square)
@@ -181,14 +217,16 @@ void main() {
     float v = sampleV(p - uDt / uDx * vec2(uHere, s.b));
 
     float etaS = S(Sth).r;
+    float hFace = 0.5 * (H(c) + H(Sth)) + 0.5 * (eta + etaS);
+    float nu = faceNu(length(vec2(uHere, s.b)), hFace, strain);
     float gravity   = -uG * (eta - etaS) / uDx;
+    float pressure  = -(pC - pressAt(Sth)) / uDx;
     float capillary =  uSigmaRho * (lapC - lapEta(Sth)) / uDx;
     float lapV = (S(c + ivec2(1, 0)).b + S(c - ivec2(1, 0)).b + S(c + ivec2(0, 1)).b + S(Sth).b - 4.0 * s.b) / (uDx * uDx);
-    float viscous = nuEff * lapV;
+    float viscous = min(nu + nuTurb, nuCap) * lapV;
 
-    v += uDt * (gravity + capillary + viscous);
-    float hFace = 0.5 * (H(c) + H(Sth)) + 0.5 * (eta + etaS);
-    v /= 1.0 + uDt * frictionRate(hFace);
+    v += uDt * (gravity + pressure + capillary + viscous);
+    v /= 1.0 + uDt * frictionRate(hFace, nu);
     float sp = length(vec2(uHere, v));
     vNew = sp > uUMax ? v * uUMax / sp : v;
   }
@@ -333,11 +371,14 @@ void main() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SURFACE PASS — packs what the renderer needs into a filterable texture:
-//   R = η,  G = ∂η/∂x,  B = ∂η/∂z,  A = |u| (local flow speed)
+//   R = η,  G = ∂η/∂x,  B = ∂η/∂z,  A = jam fraction (oobleck)
 // The surface normal is then n ∝ (−∂η/∂x, 1, −∂η/∂z).
 // ─────────────────────────────────────────────────────────────────────────────
 export const surfaceFragment = /* glsl */ `
 ${COMMON}
+${RHEOLOGY_GLSL}
+${STRAIN_GLSL}
+uniform float uHMin;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   vec4 s = S(c);
@@ -346,6 +387,16 @@ void main() {
   float dEz = (etaOr(c + ivec2(0, 1), e) - etaOr(c - ivec2(0, 1), e)) / (2.0 * uDx);
   // cell-centred velocity = average of the two faces in each direction
   vec2 vel = 0.5 * vec2(s.g + S(c + ivec2(1, 0)).g, s.b + S(c + ivec2(0, 1)).b);
-  gl_FragColor = vec4(wet(c) ? e : 0.0, dEx, dEz, length(vel));
+  // "jam" 0…1: how far up the thickening curve this cell is (log scale).
+  // Used to render oobleck's surface going dull when it locks up, and by
+  // the engineering overlay.
+  float jam = 0.0;
+  if (uShearThick > 0.5) {
+    float h = max(H(c) + e, uHMin);
+    float gb = 3.0 * length(vel) / h, st = strainRate(c);
+    float nu = viscosityAt(sqrt(gb * gb + st * st));
+    jam = clamp(log(max(nu / uRheo.x, 1.0)) / log(uRheo.w / uRheo.x), 0.0, 1.0);
+  }
+  gl_FragColor = vec4(wet(c) ? e : 0.0, dEx, dEz, jam);
 }
 `;

@@ -6,6 +6,11 @@ import { handSpeed } from '../physics/slap';
 export interface Panel {
   isOpen(): boolean;
   close(): void;
+  /** a row of choice chips; returns a function to update the selection */
+  addChoice<T extends string>(label: string, options: [T, string][], get: () => T, set: (v: T) => void): (v: T) => void;
+  addSlider(label: string, get: () => number, set: (v: number) => void, readout: (v: number) => string, ends: [string, string]): void;
+  addButtons(buttons: [string, () => void][]): HTMLButtonElement[];
+  el: HTMLElement;
 }
 
 export function createPanel(): Panel {
@@ -19,26 +24,7 @@ export function createPanel(): Panel {
 
   const card = document.createElement('div');
   card.className = 'ui-panel';
-  card.innerHTML = `
-    <div class="ui-row">
-      <label for="ui-strength">Slap strength</label>
-      <span class="ui-value" id="ui-strength-value"></span>
-    </div>
-    <input id="ui-strength" type="range" min="0" max="1" step="0.01" />
-    <div class="ui-scale"><span>gentle</span><span>hard</span></div>
-  `;
   document.body.append(button, card);
-
-  const slider = card.querySelector<HTMLInputElement>('#ui-strength')!;
-  const value = card.querySelector<HTMLSpanElement>('#ui-strength-value')!;
-  slider.value = String(settings.strength);
-  const show = () => (value.textContent = `hand ${handSpeed(settings.strength).toFixed(1)} m/s`);
-  show();
-  slider.addEventListener('input', () => {
-    settings.strength = parseFloat(slider.value);
-    show();
-    saveSettings();
-  });
 
   let open = false;
   const setOpen = (o: boolean) => {
@@ -47,5 +33,77 @@ export function createPanel(): Panel {
     button.classList.toggle('active', o);
   };
   button.addEventListener('click', () => setOpen(!open));
-  return { isOpen: () => open, close: () => setOpen(false) };
+
+  const panel: Panel = {
+    el: card,
+    isOpen: () => open,
+    close: () => setOpen(false),
+
+    addChoice(label, options, get, set) {
+      const row = document.createElement('div');
+      row.className = 'ui-section';
+      row.innerHTML = `<div class="ui-label">${label}</div><div class="ui-chips"></div>`;
+      const chips = row.querySelector('.ui-chips')!;
+      const els = options.map(([value, text]) => {
+        const b = document.createElement('button');
+        b.className = 'ui-chip';
+        b.textContent = text;
+        b.addEventListener('click', () => {
+          set(value);
+          mark(value);
+        });
+        chips.append(b);
+        return { value, b };
+      });
+      const mark = (v: string) => els.forEach((e) => e.b.classList.toggle('on', e.value === v));
+      mark(get());
+      card.append(row);
+      return mark;
+    },
+
+    addSlider(label, get, set, readout, ends) {
+      const row = document.createElement('div');
+      row.className = 'ui-section';
+      row.innerHTML = `
+        <div class="ui-row"><span class="ui-label">${label}</span><span class="ui-value"></span></div>
+        <input type="range" min="0" max="1" step="0.01" />
+        <div class="ui-scale"><span>${ends[0]}</span><span>${ends[1]}</span></div>`;
+      const input = row.querySelector('input')!;
+      const value = row.querySelector<HTMLSpanElement>('.ui-value')!;
+      input.value = String(get());
+      value.textContent = readout(get());
+      input.addEventListener('input', () => {
+        set(parseFloat(input.value));
+        value.textContent = readout(get());
+      });
+      card.append(row);
+    },
+
+    addButtons(buttons) {
+      const row = document.createElement('div');
+      row.className = 'ui-section ui-buttons';
+      const els = buttons.map(([text, fn]) => {
+        const b = document.createElement('button');
+        b.className = 'ui-chip ui-action';
+        b.textContent = text;
+        b.addEventListener('click', fn);
+        row.append(b);
+        return b;
+      });
+      card.append(row);
+      return els;
+    },
+  };
+
+  panel.addSlider(
+    'Slap strength',
+    () => settings.strength,
+    (v) => {
+      settings.strength = v;
+      saveSettings();
+    },
+    (v) => `hand ${handSpeed(v).toFixed(1)} m/s`,
+    ['gentle', 'hard'],
+  );
+  return panel;
 }

@@ -15,6 +15,7 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
       uSkyTop: { value: new THREE.Color() },
       uSkyHorizon: { value: new THREE.Color() },
       uTint: { value: new THREE.Color(1, 1, 1) },
+      uMetal: { value: 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vN;
@@ -29,6 +30,7 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
       uniform sampler2D uSceneColor;
       uniform vec2 uResolution;
       uniform vec3 uSunDir, uSunColor, uSkyTop, uSkyHorizon, uTint;
+      uniform float uMetal;
       varying vec3 vN;
       varying vec3 vWPos;
       void main() {
@@ -43,7 +45,9 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
         vec3 R = reflect(-V, N);
         vec3 sky = mix(uSkyHorizon, uSkyTop, clamp(R.y * 2.0, 0.0, 1.0));
         float spec = pow(max(dot(R, uSunDir), 0.0), 400.0) * 6.0;
-        gl_FragColor = vec4(mix(refr, sky, F) + uSunColor * spec, 1.0);
+        // mercury beads: a tiny curved mirror (≈ 78 % reflectance, no refraction)
+        vec3 col = uMetal > 0.5 ? sky * 0.78 + uSunColor * spec * 0.78 : mix(refr, sky, F) + uSunColor * spec;
+        gl_FragColor = vec4(col, 1.0);
       }`,
   });
   const mesh = new THREE.InstancedMesh(geo, mat, MAX_DROPS);
@@ -70,7 +74,11 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
       if (speed > 1e-4) q.setFromUnitVectors(up, dir.multiplyScalar(1 / speed));
       else q.identity();
       pos.set(drops.pos[k * 3], drops.pos[k * 3 + 1], drops.pos[k * 3 + 2]);
-      scl.set(r, r * Math.min(stretch, 3), r);
+      if (drops.mode[k] !== 0) {
+        // a bead resting on the ground, squashed a little by its own weight
+        q.identity();
+        scl.set(r * 1.1, r * 0.75, r * 1.1);
+      } else scl.set(r, r * Math.min(stretch, 3), r);
       m.compose(pos, q, scl);
       mesh.setMatrixAt(n++, m);
     }

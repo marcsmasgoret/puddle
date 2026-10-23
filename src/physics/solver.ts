@@ -12,7 +12,8 @@
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { DOMAIN_X, DOMAIN_Z, type Grid } from './grid';
-import { type FluidProperties, kinematicViscosity } from './fluids';
+import { type FluidProperties } from './fluids';
+import { rheologyUniforms } from './rheology';
 import { type PuddleShape } from './puddleShape';
 import { planSteps, U_MAX, type StepPlan } from './stability';
 import {
@@ -23,6 +24,7 @@ import {
   impulseFragment,
   surfaceFragment,
   MAX_IMPULSES,
+  MAX_PRESSES,
 } from './swe/shaders';
 
 export const GRAVITY = 9.81; // [m/s²]
@@ -48,6 +50,14 @@ export interface Impulse {
   push?: [number, number];
   /** volume added (+) or removed (−) [m³] */
   volume?: number;
+}
+
+/** A finger held down on the surface: steady pressure p [Pa] over radius R. */
+export interface Press {
+  x: number;
+  z: number;
+  radius: number;
+  pressure: number;
 }
 
 export class ShallowWaterSolver {
@@ -145,7 +155,10 @@ export class ShallowWaterSolver {
       uDt: { value: 0 },
       uG: { value: this.gravity },
       uSigmaRho: { value: 0 },
-      uNu: { value: 0 },
+      uOrigin: { value: new THREE.Vector2(-DOMAIN_X / 2, -DOMAIN_Z / 2) },
+      uPressCount: { value: 0 },
+      uPress: { value: Array.from({ length: MAX_PRESSES }, () => new THREE.Vector4()) },
+      ...this.rheoUniforms(),
       uOmegaRef: { value: OMEGA_REF },
       uHMin: { value: H_MIN },
       uUMax: { value: U_MAX },
@@ -161,7 +174,50 @@ export class ShallowWaterSolver {
       uOrigin: { value: new THREE.Vector2(-DOMAIN_X / 2, -DOMAIN_Z / 2) },
       uHMin: { value: H_MIN },
     });
-    this.surfaceMat = mat(surfaceFragment, {});
+    this.surfaceMat = mat(surfaceFragment, { uHMin: { value: H_MIN }, ...this.rheoUniforms() });
+    this.setFluid(fluid);
+  }
+
+  private rheoUniforms() {
+    return {
+      uShearThick: { value: 0 },
+      uRheo: { value: new THREE.Vector4() },
+      uTauY: { value: 0 },
+    };
+  }
+
+  /** Switch fluid: new properties, and the puddle starts calm. */
+  setFluid(f: FluidProperties) {
+    this.fluid = f;
+    const r = rheologyUniforms(f);
+    for (const m of [this.velocityMat, this.surfaceMat]) {
+      m.uniforms.uShearThick.value = r.enabled;
+      (m.uniforms.uRheo.value as THREE.Vector4).set(r.nu0, r.gammaC, r.n, r.nuMax);
+      m.uniforms.uTauY.value = r.tauY;
+    }
+    this.reset();
+  }
+
+  /** Flatten the surface and stop all motion. */
+  reset() {
+    const prev = this.renderer.getClearColor(new THREE.Color());
+    const prevA = this.renderer.getClearAlpha();
+    this.renderer.setClearColor(0x000000, 0);
+    for (const t of this.state) {
+      this.renderer.setRenderTarget(t);
+      this.renderer.clear(true, false, false);
+    }
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prev, prevA);
+    this.pending.length = 0;
+  }
+
+  /** Fingers currently held on the surface (up to MAX_PRESSES). */
+  setPresses(presses: Press[]) {
+    const u = this.velocityMat.uniforms;
+    const list = presses.slice(0, MAX_PRESSES);
+    list.forEach((p, k) => (u.uPress.value[k] as THREE.Vector4).set(p.x, p.z, p.radius, p.pressure / this.fluid.density));
+    u.uPressCount.value = list.length;
   }
 
   /** Queue a slap / push; applied at the start of the next step. */
@@ -174,17 +230,17 @@ export class ShallowWaterSolver {
     const dtFrame = Math.min(frameDt, 1 / 20) * this.timeScale;
     if (dtFrame > 0) {
       const f = this.fluid;
-      const nu = kinematicViscosity(f);
       // budget for crests up to twice the rest depth (waves raise the local
       // depth, and with it the wave speed)
-      const plan = planSteps(dtFrame, this.grid.dx, 2 * this.maxDepth, this.gravity, f.surfaceTension / f.density, nu);
+      // (viscosity no longer limits dt: friction is implicit and the in-plane
+      // viscous term is capped at its own stability limit, see shaders.ts)
+      const plan = planSteps(dtFrame, this.grid.dx, 2 * this.maxDepth, this.gravity, f.surfaceTension / f.density, 0);
       this.lastPlan = plan;
 
       const vu = this.velocityMat.uniforms;
       vu.uDt.value = plan.dt;
       vu.uG.value = this.gravity;
       vu.uSigmaRho.value = f.surfaceTension / f.density;
-      vu.uNu.value = nu;
       vu.uExtraDamp.value = this.extraDamping;
       this.heightMat.uniforms.uDt.value = plan.dt;
       this.limiterMat.uniforms.uDt.value = plan.dt;

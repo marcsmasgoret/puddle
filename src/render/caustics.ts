@@ -44,13 +44,16 @@ export class Caustics {
         uExtent: { value: new THREE.Vector2(...solver.extent) },
         uLight: { value: new THREE.Vector3(0, -1, 0) },
         uEta: { value: 1 / ior },
+        uKappa: { value: new THREE.Vector3() },
       },
       vertexShader: /* glsl */ `
         uniform sampler2D uSurface, uShape;
         uniform vec2 uExtent;
         uniform vec3 uLight;   // direction sunlight travels (unit, pointing down)
         uniform float uEta;    // n_air / n_fluid
+        uniform vec3 uKappa;   // absorption along the light's path [1/m]
         varying vec3 vOld, vNew;
+        varying vec3 vT;
         void main() {
           vec2 uv = position.xy;
           vec4 s = texture2D(uSurface, uv);
@@ -63,16 +66,19 @@ export class Caustics {
           // follow each ray down to the floor at depth H below rest level
           vOld = vec3(q.x, 0.0, q.y) + r0 * (H / -r0.y);
           vNew = p + r * ((H + s.r) / -r.y);
+          // light reaching the bed has crossed the layer once (Beer–Lambert)
+          vT = exp(-uKappa * length(vNew - p));
           vec2 clip = (vNew.xz / uExtent) * 2.0 - 1.0;
           gl_Position = vec4(clip, 0.0, 1.0);
         }`,
       fragmentShader: /* glsl */ `
         varying vec3 vOld, vNew;
+        varying vec3 vT;
         void main() {
           float aOld = length(dFdx(vOld.xz)) * length(dFdy(vOld.xz));
           float aNew = length(dFdx(vNew.xz)) * length(dFdy(vNew.xz));
           float I = aOld / max(aNew, 1e-12);
-          gl_FragColor = vec4(min(I, 12.0), 0.0, 0.0, 1.0);
+          gl_FragColor = vec4(min(I, 12.0) * vT, 1.0);
         }`,
       blending: THREE.AdditiveBlending,
       depthTest: false,
@@ -97,8 +103,33 @@ export class Caustics {
     return { min, max, mean: sum / (buf.length / 4) };
   }
 
+  enabled = true;
+  private clearedWhite = false;
+
+  /** Set the fluid's refractive index and absorption (or disable for opaque fluids). */
+  setOptics(ior: number | null, kappa: [number, number, number] = [0, 0, 0]) {
+    this.enabled = ior !== null;
+    if (ior !== null) this.material.uniforms.uEta.value = 1 / ior;
+    this.material.uniforms.uKappa.value.set(...kappa);
+  }
+
   /** sunDir points *toward* the sun. */
   update(renderer: THREE.WebGLRenderer, sunDir: THREE.Vector3) {
+    if (!this.enabled) {
+      // opaque fluid: no light reaches the bed through it; leave it unlit
+      // by caustics (multiplier 1 everywhere)
+      if (!this.clearedWhite) {
+        renderer.setRenderTarget(this.target);
+        const prev = renderer.getClearColor(new THREE.Color());
+        renderer.setClearColor(0xffffff, 1);
+        renderer.clear(true, false, false);
+        renderer.setClearColor(prev);
+        renderer.setRenderTarget(null);
+        this.clearedWhite = true;
+      }
+      return;
+    }
+    this.clearedWhite = false;
     this.material.uniforms.uLight.value.copy(sunDir).negate();
     const prevClear = renderer.getClearColor(new THREE.Color());
     const prevAlpha = renderer.getClearAlpha();

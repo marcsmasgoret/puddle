@@ -1,27 +1,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Water surface shading
+// Fluid surface shading
 //
-// What you see at each point of the surface is a mix of two light paths:
+// Every fluid uses the same wave surface, but light interacts with it in
+// physically different ways:
 //
-//  1. REFRACTED: light from the puddle bed, bent by Snell's law at the wavy
-//     surface (n₁ sin θ₁ = n₂ sin θ₂) and dimmed by absorption along the path
-//     through the fluid (Beer–Lambert: I = I₀ e^(−κL), per colour channel).
+//  DIELECTRIC (water, honey) — light splits at the surface:
+//   • REFRACTED: light from the bed, bent by Snell's law (n₁ sin θ₁ = n₂ sin θ₂)
+//     and dimmed by absorption along the path (Beer–Lambert: I = I₀ e^(−κL)
+//     per colour). Honey's strong blue absorption is what makes it golden.
+//   • REFLECTED: sky and scenery, weighted by the exact Fresnel reflectance
+//     F(θ) (≈ 2 % looking straight down for water, ~100 % at grazing).
 //
-//  2. REFLECTED: the sky and scenery, mirrored in the surface.
+//  METAL (mercury) — free electrons reflect light before it can enter, so
+//   there is no refraction at all. Reflectance follows the conductor Fresnel
+//   equations with a complex index n + ik (≈ 78 % for mercury at every
+//   colour: a bright, neutral mirror). Mercury does not wet the ground
+//   (contact angle ≈ 140°), so its edge is a rounded bead that curves down
+//   into the soil, catching light along the rim.
 //
-// The split between them is the Fresnel reflectance F(θ): almost all
-// refraction looking straight down (F ≈ 2 % for water), almost all reflection
-// at grazing angles. That is why a puddle looks like a window near your feet
-// and like a mirror further away.
+//  OPAQUE (oobleck) — a dense starch suspension scatters light within a
+//   millimetre: it looks like matte cream with a wet sheen. Very thin edges
+//   still show the bed through them. When it jams under a hit, grains poke
+//   through the surface and it briefly goes dull (dilatancy).
 //
-// Add a sharp specular highlight of the sun (GGX microfacet model) and you
-// have the full surface.
+// All three add the sun's specular glint (GGX microfacet model).
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from 'three';
 import type { ShallowWaterSolver } from '../physics/solver';
 import type { FluidProperties } from '../physics/fluids';
+import { NOISE } from './glsl';
 
-export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperties) {
+export function createWaterMesh(solver: ShallowWaterSolver) {
   const [ox, oz] = solver.origin;
   const [ex, ez] = solver.extent;
   const geo = new THREE.PlaneGeometry(ex, ez, Math.round(solver.grid.nx / 2), Math.round(solver.grid.nz / 2));
@@ -33,6 +42,7 @@ export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperti
     uShape: { value: solver.shapeTexture },
     uOrigin: { value: new THREE.Vector2(ox, oz) },
     uExtent: { value: new THREE.Vector2(ex, ez) },
+    uTexel: { value: new THREE.Vector2(1 / solver.grid.nx, 1 / solver.grid.nz) },
     uSceneColor: { value: null as THREE.Texture | null },
     uSceneDepth: { value: null as THREE.Texture | null },
     uReflection: { value: null as THREE.Texture | null },
@@ -41,13 +51,19 @@ export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperti
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uSunColor: { value: new THREE.Color(1, 1, 1) },
     uAmbient: { value: new THREE.Color(0.5, 0.55, 0.6) },
-    uIor: { value: fluid.refractiveIndex },
-    uAbsorption: { value: new THREE.Vector3(...fluid.absorption) },
-    // Suspended sediment / dissolved organics in a real puddle (scene choice,
-    // not a property of water): extra extinction [1/m] and its scatter colour.
-    uTurbidity: { value: new THREE.Vector3(2.0, 2.6, 3.4) },
+    uMode: { value: 0 },
+    uIor: { value: 1.333 },
+    uAbsorption: { value: new THREE.Vector3() },
+    uTurbidity: { value: new THREE.Vector3() },
     uScatter: { value: new THREE.Color('#6f6a4c') },
     uRoughness: { value: 0.05 },
+    uMetalN: { value: new THREE.Vector3() },
+    uMetalK: { value: new THREE.Vector3() },
+    uAlbedo: { value: new THREE.Color() },
+    uExtinction: { value: 0 },
+    uMeniscus: { value: 0 },
+    // recent impacts on a shear-thickening fluid: (x, z, R, strength 0…1)
+    uJamMarks: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -67,12 +83,16 @@ export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperti
     fragmentShader: /* glsl */ `
       uniform sampler2D uSurface, uShape, uSceneColor, uSceneDepth, uReflection;
       uniform mat4 projectionMatrix;
-      uniform vec2 uOrigin, uExtent, uResolution;
+      uniform vec2 uOrigin, uExtent, uResolution, uTexel;
       uniform mat4 uReflMatrix;
-      uniform vec3 uSunDir, uSunColor, uAmbient, uAbsorption, uTurbidity, uScatter;
-      uniform float uIor, uRoughness;
+      uniform vec3 uSunDir, uSunColor, uAmbient, uAbsorption, uTurbidity, uScatter, uAlbedo;
+      uniform vec3 uMetalN, uMetalK;
+      uniform float uIor, uRoughness, uExtinction, uMeniscus;
+      uniform int uMode;
+      uniform vec4 uJamMarks[4];
       varying vec3 vWPos;
       varying vec2 vUv;
+      ${NOISE}
 
       // Exact Fresnel reflectance for unpolarised light at a dielectric
       // interface (average of s- and p-polarisations).
@@ -84,7 +104,21 @@ export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperti
         float rp = (n * cosI - cosT) / (n * cosI + cosT);
         return 0.5 * (rs * rs + rp * rp);
       }
-
+      // Fresnel reflectance of a conductor with complex index n + ik (the
+      // standard closed form used in physically based rendering), per colour.
+      vec3 fresnelMetal(float c, vec3 n, vec3 k) {
+        vec3 nk = n * n + k * k;
+        float c2 = c * c;
+        vec3 rs = (nk - 2.0 * n * c + c2) / (nk + 2.0 * n * c + c2);
+        vec3 rp = (nk * c2 - 2.0 * n * c + 1.0) / (nk * c2 + 2.0 * n * c + 1.0);
+        return 0.5 * (rs + rp);
+      }
+      float ggx(vec3 n, vec3 h, float a) {
+        float a2 = a * a * a * a;
+        float NdH = max(dot(n, h), 0.0);
+        float d = NdH * NdH * (a2 - 1.0) + 1.0;
+        return a2 / (3.14159265 * d * d);
+      }
       vec2 toScreen(vec3 world) {
         vec4 c = projectionMatrix * viewMatrix * vec4(world, 1.0);
         return c.xy / c.w * 0.5 + 0.5;
@@ -97,50 +131,148 @@ export function createWaterMesh(solver: ShallowWaterSolver, fluid: FluidProperti
 
         vec4 s = texture2D(uSurface, vUv);
         vec3 n = normalize(vec3(-s.g, 1.0, -s.b));
+        // non-wetting rim (mercury): the surface rolls over into a bead at
+        // the edge, so tilt the normal outward close to the contact line
+        if (uMeniscus > 0.0) {
+          float gx = texture2D(uShape, vUv + vec2(uTexel.x, 0.0)).r - texture2D(uShape, vUv - vec2(uTexel.x, 0.0)).r;
+          float gz = texture2D(uShape, vUv + vec2(0.0, uTexel.y)).r - texture2D(uShape, vUv - vec2(0.0, uTexel.y)).r;
+          vec2 outward = normalize(vec2(gx, gz) + 1e-6);
+          float t = clamp(1.0 + sdf / uMeniscus, 0.0, 1.0);    // 0 inside … 1 at the edge
+          float slope = tan(t * t * 1.2);                      // up to ~50° at the rim
+          n = normalize(n + vec3(outward.x, 0.0, outward.y) * slope);
+        }
         vec3 V = normalize(cameraPosition - vWPos);
         float cosV = clamp(dot(n, V), 0.0, 1.0);
         vec2 screenUv = gl_FragCoord.xy / uResolution;
+        vec3 direct = texture2D(uSceneColor, screenUv).rgb;
 
-        // ── 1. refraction: follow the bent ray to the bed ────────────────
-        vec3 rd = refract(-V, n, 1.0 / uIor);
-        float depth = max(H + s.r, 0.0);
-        vec3 P = vWPos + rd * (depth / max(-rd.y, 0.15));
-        // second iteration: use the bed depth where the ray actually lands
-        float Hp = texture2D(uShape, (P.xz - uOrigin) / uExtent).g;
-        P = vWPos + rd * ((vWPos.y + Hp) / max(-rd.y, 0.15));
-        vec2 refrUv = clamp(toScreen(P), 0.001, 0.999);
-        // if something above the water sits at that pixel (a rock, later a
-        // duck), refraction there is invalid: fall back to the direct view
-        if (texture2D(uSceneDepth, refrUv).r < gl_FragCoord.z) refrUv = screenUv;
-        float L = length(P - vWPos);
-        vec3 transmit = exp(-(uAbsorption + uTurbidity) * L);
-        vec3 refr = texture2D(uSceneColor, refrUv).rgb * transmit
-                  + uScatter * uAmbient * (1.0 - exp(-uTurbidity * L)) * 0.35;
-
-        // ── 2. reflection: perturb the mirrored ray by the surface slope ──
+        // reflection: perturb the mirrored ray by the surface slope
         vec3 R = reflect(-V, n);
         vec4 rc = uReflMatrix * vec4(vWPos + R * 8.0, 1.0);
         vec2 reflUv = clamp(rc.xy / rc.w * 0.5 + 0.5, 0.001, 0.999);
         vec3 refl = texture2D(uReflection, reflUv).rgb;
 
-        // ── 3. sun glints: GGX microfacet specular ───────────────────────
         vec3 Hv = normalize(V + uSunDir);
-        float NdH = max(dot(n, Hv), 0.0), NdL = max(dot(n, uSunDir), 0.0);
-        float a2 = uRoughness * uRoughness * uRoughness * uRoughness;
-        float d = NdH * NdH * (a2 - 1.0) + 1.0;
-        float D = a2 / (3.14159265 * d * d);
-        float spec = min(D * fresnel(max(dot(V, Hv), 0.0), uIor) * NdL / max(4.0 * NdL * cosV, 1e-3), 80.0);
+        float NdL = max(dot(n, uSunDir), 0.0);
+        float D = ggx(n, Hv, uRoughness);
+        float geom = NdL / max(4.0 * NdL * cosV, 1e-3);
 
-        float F = fresnel(cosV, uIor);
-        vec3 col = mix(refr, refl, F) + uSunColor * spec * NdL;
+        // refraction path to the bed (used by dielectrics and thin opaque edges)
+        vec3 rd = refract(-V, n, 1.0 / uIor);
+        float depth = max(H + s.r, 0.0);
+        vec3 P = vWPos + rd * (depth / max(-rd.y, 0.15));
+        float Hp = texture2D(uShape, (P.xz - uOrigin) / uExtent).g;
+        P = vWPos + rd * ((vWPos.y + Hp) / max(-rd.y, 0.15));
+        vec2 refrUv = clamp(toScreen(P), 0.001, 0.999);
+        // something above the surface at that pixel: refraction is invalid
+        if (texture2D(uSceneDepth, refrUv).r < gl_FragCoord.z) refrUv = screenUv;
+        float L = length(P - vWPos);
 
-        // ── shoreline: the film thins to nothing, blend into the ground ──
-        vec3 direct = texture2D(uSceneColor, screenUv).rgb;
-        col = mix(col, direct, smoothstep(-0.004, 0.0015, sdf));
+        vec3 col;
+        float edgeBand = 0.004;
+        if (uMode == 1) {
+          // ── metal ──
+          vec3 F = fresnelMetal(cosV, uMetalN, uMetalK);
+          vec3 Fh = fresnelMetal(max(dot(V, Hv), 0.0), uMetalN, uMetalK);
+          col = F * refl + uSunColor * Fh * min(D * geom, 80.0) * NdL;
+          edgeBand = 0.0008;
+        } else if (uMode == 2) {
+          // ── opaque suspension ──
+          // the small yield stress leaves the surface gently lumpy instead of
+          // perfectly level: a soft, low-amplitude bump texture
+          vec2 q = vWPos.xz * 9.0;
+          float e = 0.05;
+          float b = vnoise(q) + 0.5 * vnoise(q * 2.3 + 4.0);
+          vec2 g = vec2(vnoise(q + vec2(e, 0.0)) + 0.5 * vnoise((q + vec2(e, 0.0)) * 2.3 + 4.0) - b,
+                        vnoise(q + vec2(0.0, e)) + 0.5 * vnoise((q + vec2(0.0, e)) * 2.3 + 4.0) - b) / e;
+          n = normalize(n + vec3(g.x, 0.0, g.y) * 0.025);
+          cosV = clamp(dot(n, V), 0.0, 1.0);
+          Hv = normalize(V + uSunDir);
+          NdL = max(dot(n, uSunDir), 0.0);
+          R = reflect(-V, n);
+          rc = uReflMatrix * vec4(vWPos + R * 8.0, 1.0);
+          refl = texture2D(uReflection, clamp(rc.xy / rc.w * 0.5 + 0.5, 0.001, 0.999)).rgb;
+          geom = NdL / max(4.0 * NdL * cosV, 1e-3);
+          // jammed where the solver says the strain rate is high right now, and
+          // where a recent impact froze the surface: an impact sends a jamming
+          // front out wider than the impactor (Waitukaitis & Jaeger 2012),
+          // which then "melts" back to liquid over a fraction of a second
+          float jam = s.a;
+          for (int k = 0; k < 4; k++) {
+            vec2 d = vWPos.xz - uJamMarks[k].xy;
+            jam = max(jam, uJamMarks[k].w * exp(-dot(d, d) / (uJamMarks[k].z * uJamMarks[k].z)));
+          }
+          float rough = mix(uRoughness, 0.85, jam);
+          // jammed grains poke through the surface: it turns matte, a touch
+          // paler and grainy, and loses its wet reflection
+          float grain = vnoise(vWPos.xz * 900.0) * jam;
+          float F = fresnel(cosV, uIor) * (1.0 - 0.85 * jam);
+          // soft wrap lighting: light scatters a little way into the cream
+          float wrap = clamp((dot(n, uSunDir) + 0.3) / 1.3, 0.0, 1.0);
+          vec3 diffuse = uAlbedo * (uSunColor * wrap * 0.28 + uAmbient * 0.42);
+          diffuse *= 1.0 + 0.1 * jam - 0.12 * grain;
+          float Ds = ggx(n, Hv, rough);
+          vec3 spec = uSunColor * fresnel(max(dot(V, Hv), 0.0), uIor) * min(Ds * geom, 40.0) * NdL * (1.0 - 0.9 * jam);
+          vec3 body = mix(diffuse, refl, min(F * 1.6, 1.0));
+          // a film thinner than the scattering length shows the bed through it
+          float T = exp(-uExtinction * depth);
+          col = mix(body, texture2D(uSceneColor, refrUv).rgb, T) + spec;
+        } else {
+          // ── dielectric ──
+          vec3 transmit = exp(-(uAbsorption + uTurbidity) * L);
+          vec3 refr = texture2D(uSceneColor, refrUv).rgb * transmit
+                    + uScatter * (uAmbient * 0.35 + uSunColor * 0.12) * (1.0 - exp(-uTurbidity * L));
+          float F = fresnel(cosV, uIor);
+          float spec = min(D * fresnel(max(dot(V, Hv), 0.0), uIor) * geom, 80.0);
+          col = mix(refr, refl, F) + uSunColor * spec * NdL;
+        }
+
+        // shoreline: the film thins to nothing, blend into the ground
+        col = mix(col, direct, smoothstep(-edgeBand, 0.0015, sdf));
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
   const mesh = new THREE.Mesh(geo, material);
   mesh.frustumCulled = false;
-  return { mesh, uniforms };
+
+  /** Load a fluid's optical properties into the shader. */
+  function applyFluid(f: FluidProperties) {
+    const o = f.optics;
+    const u = uniforms;
+    u.uMeniscus.value = 0;
+    u.uTurbidity.value.set(0, 0, 0);
+    if (o.kind === 'dielectric') {
+      u.uMode.value = 0;
+      u.uIor.value = o.ior;
+      u.uAbsorption.value.set(...o.absorption);
+      u.uRoughness.value = o.roughness;
+      // puddle water carries a little fine sediment (scene choice)
+      if (f.id === 'water') {
+        u.uTurbidity.value.set(2.0, 2.6, 3.4);
+        u.uScatter.value.set('#6f6a4c');
+      }
+      // honey carries pollen and fine sugar crystals that scatter warm light
+      if (f.id === 'honey') {
+        u.uTurbidity.value.set(6, 6, 6);
+        u.uScatter.value.set('#f0a02a');
+      }
+    } else if (o.kind === 'metal') {
+      u.uMode.value = 1;
+      u.uMetalN.value.set(...o.n);
+      u.uMetalK.value.set(...o.k);
+      u.uRoughness.value = o.roughness;
+      u.uIor.value = 1.5;
+      // rim width ≈ 3 capillary lengths (ℓc ≈ 1.9 mm for mercury), widened
+      // slightly so it reads at screen resolution
+      u.uMeniscus.value = 0.008;
+    } else {
+      u.uMode.value = 2;
+      u.uAlbedo.value.setRGB(...o.albedo);
+      u.uIor.value = o.ior;
+      u.uExtinction.value = o.extinction;
+      u.uRoughness.value = o.roughness;
+    }
+  }
+
+  return { mesh, uniforms, applyFluid };
 }

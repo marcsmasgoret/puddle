@@ -30,13 +30,19 @@
 //        J_spray = (1 − s) · J · ε             momentum carried by drops
 //
 //    ε ≈ 0.5 accounts for momentum lost to the bed, turbulence and the crater
-//    (an assumption, stated as such in the write-up). The spray mass follows
-//    from the drops' mean launch speed v̄:  m_spray = J_spray / v̄.
+//    (an assumption, stated as such in the write-up). For viscous liquids the
+//    sheet resists breaking up, so ε falls with the Ohnesorge number:
+//    ε = 0.5 / (1 + 5·Oh)  (water, mercury: ≈ 0.5; honey: ≈ 0.007).
+//    The spray mass follows from the drops' mean launch speed v̄:
+//    m_spray = J_spray / v̄.
+//
+// 4. Oobleck does not splash: the slap jams it (see rheology.ts) and the
+//    impulse is absorbed by the locked-up layer instead.
 //
 //    Mass is conserved: the spray volume is removed from the puddle at the
 //    slap and returned wherever each drop lands.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { FluidProperties } from './fluids';
+import { ohnesorge, type FluidProperties } from './fluids';
 
 /** Palm radius [m]: an adult palm is roughly 8–9 cm across. */
 export const HAND_RADIUS = 0.045;
@@ -73,7 +79,8 @@ export function computeSlap(V: number, localDepth: number, fluid: FluidPropertie
   const s = Math.min(1, (FROUDE_MAX * c) / duMax);
 
   const meanSpeed = Math.min(0.8 * V, 6);
-  let sprayMass = s < 1 ? ((1 - s) * J * SPRAY_EFFICIENCY) / meanSpeed : 0;
+  const eps = SPRAY_EFFICIENCY / (1 + 5 * ohnesorge(fluid));
+  let sprayMass = s < 1 && fluid.splashes ? ((1 - s) * J * eps) / meanSpeed : 0;
   // can't throw more than half the water that is actually under the hand
   const available = 0.5 * rho * Math.PI * a * a * localDepth;
   sprayMass = Math.min(sprayMass, available);

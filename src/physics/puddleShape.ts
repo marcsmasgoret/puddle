@@ -39,7 +39,10 @@ function mulberry32(seed: number) {
   };
 }
 
-export function buildPuddle(grid: Grid, restDepth: number, seed = 7): PuddleShape {
+/** Deepest point of the bowl [m]: every fluid fills the same 1.5 cm bowl. */
+export const BOWL_DEPTH = 0.015;
+
+export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, seed = 7): PuddleShape {
   const rand = mulberry32(seed);
 
   // ── outline r(θ) = 1 + Σ aₖ sin(kθ + φₖ), stretched to an ellipse ──
