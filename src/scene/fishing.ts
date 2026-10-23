@@ -42,7 +42,10 @@ export class Fishing {
     return new THREE.Vector3(1.25, -0.25, 0.4).unproject(this.camera).sub(this.camera.position).normalize().multiplyScalar(0.9).add(this.camera.position);
   }
 
+  onCast: () => void = () => {};
+
   cast(x: number, z: number) {
+    this.onCast();
     this.reelIn(true);
     const tip = this.rodTip();
     const target = new THREE.Vector3(x, 0.012, z);

@@ -15,9 +15,10 @@
 //    The capillary part grows like 1/dx², so surface tension, not gravity,
 //    usually limits the step at fine resolution.
 //
-// 2. Advection: semi-Lagrangian advection is unconditionally stable, but we
-//    still keep |u|·dt ≤ dx so the back-trace stays local and accurate. The
-//    shader clamps |u| to U_MAX as a numerical safeguard.
+// 2. Advection: the momentum-conserving upwind scheme (swe/shaders.ts) is
+//    explicit, so in 2D it needs (|u| + |v|)·dt ≤ dx. The shader clamps the
+//    speed √(u² + v²) to U_MAX, and |u| + |v| ≤ √2·|u|, so
+//        dt ≤ dx / (√2 · U_MAX).
 //
 // 3. Horizontal viscosity ν∇²u, treated explicitly: dt ≤ dx² / (4ν).
 //    (Bottom friction is treated implicitly and never limits dt.)
@@ -49,7 +50,7 @@ export function planSteps(
   const lambdaMax = 8 / (dx * dx);
   const omegaMax = Math.sqrt(maxDepth * (g * lambdaMax + sigmaOverRho * lambdaMax * lambdaMax));
   const wave = 2 / omegaMax;
-  const advection = dx / U_MAX;
+  const advection = dx / (Math.SQRT2 * U_MAX);
   const viscous = nu > 0 ? (dx * dx) / (4 * nu) : Infinity;
   const dtMax = SAFETY * Math.min(wave, advection, viscous);
 

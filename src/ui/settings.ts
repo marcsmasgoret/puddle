@@ -18,6 +18,8 @@ export interface Settings {
   season: Season;
   time: TimeOfDay;
   weather: Weather;
+  volume: number;
+  muted: boolean;
 }
 
 const defaults: Settings = {
@@ -30,6 +32,8 @@ const defaults: Settings = {
   season: 'summer',
   time: 'day',
   weather: 'clear',
+  volume: 0.7,
+  muted: false,
 };
 
 function load(): Settings {

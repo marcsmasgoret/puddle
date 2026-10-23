@@ -50,11 +50,20 @@ function facade(color: string, night: number, seed: number) {
         vec3 col = uWall * light;
         vec3 glass = mix(vec3(0.16, 0.2, 0.26), vec3(0.45, 0.55, 0.65), 0.3) * light;
         col = mix(col, glass, win);
-        // at night some windows glow warm
+        // at night some windows glow warm: lamp-lit rooms, brighter toward
+        // the ceiling, each a slightly different colour and strength
         float lit = step(0.6, h(cell)) * uNight;
-        col += win * lit * vec3(0.9, 0.62, 0.32) * (0.6 + 0.6 * h(cell + 3.0));
-        col = mix(col, glass, shop * 0.8);
-        col += shop * uNight * vec3(0.8, 0.6, 0.38) * step(0.3, h(vec2(floor(vF.x / 7.0), 9.0)));
+        vec3 room = mix(vec3(0.62, 0.38, 0.16), vec3(0.55, 0.45, 0.3), h(cell + 7.0));
+        col += win * lit * room * (0.25 + 0.35 * h(cell + 3.0)) * (0.7 + 0.5 * f.y);
+        // shopfronts: panes between mullions, a dark sill, lit from the
+        // ceiling inside; about two in three are open late
+        float bay = floor(vF.x / 7.0);
+        float pane = step(0.05, fract(vF.x / 1.75)) * step(fract(vF.x / 1.75), 0.95);
+        float shopLit = step(0.35, h(vec2(bay, 9.0))) * uNight;
+        float sill = smoothstep(0.6, 0.75, vF.y);
+        col = mix(col, glass * 0.8, shop);
+        vec3 shopCol = mix(vec3(0.6, 0.42, 0.22), vec3(0.5, 0.48, 0.4), h(vec2(bay, 4.0)));
+        col += shop * pane * sill * shopLit * shopCol * (0.14 + 0.24 * smoothstep(0.6, 2.9, vF.y));
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
       }`,
@@ -65,6 +74,11 @@ const def: LocationDef = {
   id: 'city',
   shape: () => ({ kind: 'blob', seed: 11, rx: 1.0, rz: 0.5, wobble: 0.9 }),
   ground: { style: 'asphalt', a: '#56575b', b: '#4b4c50', c: '#e2c75a', bed: '#45464a', bedAccent: '#5a5a5c' },
+  critters: {
+    // out of a crack along the curb, darting along it into the storm drain
+    mouse: { from: [-2.6, -4.13], to: [1.6, -4.13], hide: 'drain' },
+    habitat: { birds: ['crows', 'songbirds'], trees: [[-3.2, -5.4], [8.6, -5.5], [-11, -5.3]] },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season } = ctx;

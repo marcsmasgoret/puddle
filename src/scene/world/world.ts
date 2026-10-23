@@ -12,6 +12,10 @@ import { sway, type Waters } from './props';
 import { WeatherSystem } from './weather';
 import { Leaves } from './leaves';
 import { Ice } from './ice';
+import { MouseCat } from '../animals/mouseCat';
+import { Wildlife } from '../animals/wildlife';
+import { Prints } from '../animals/prints';
+import { setGroundPrints } from '../../render/ground';
 
 export interface WorldConfig {
   location: LocationId;
@@ -24,7 +28,7 @@ const SEASON_LOOK: Record<Season, SeasonLook> = {
   spring: { snow: 0, leaves: 0, grass: [1.08, 1.12, 0.92] },
   summer: { snow: 0, leaves: 0, grass: [1, 1, 1] },
   autumn: { snow: 0, leaves: 0.6, grass: [1.15, 1.0, 0.7] },
-  winter: { snow: 0.85, leaves: 0, grass: [0.85, 0.85, 0.8] },
+  winter: { snow: 0.85, leaves: 0, grass: [1.05, 0.86, 0.82] }, // dormant, browner grass and moss
 };
 
 export interface WorldHooks {
@@ -41,10 +45,14 @@ export class World {
   readonly weather: WeatherSystem;
   readonly leaves: Leaves;
   readonly ice: Ice;
+  readonly prints = new Prints();
+  readonly mouseCat = new MouseCat(this.prints);
+  readonly wildlife = new Wildlife();
   def: LocationDef | null = null;
   private built: BuiltLocation | null = null;
   private shapeKey = '';
   private loading = Promise.resolve();
+  private renderer: THREE.WebGLRenderer;
   readonly time = { value: 0 };
   hotTub = false;
   waterFreezes = false;
@@ -66,6 +74,9 @@ export class World {
     this.leaves = new Leaves(scene, renderer, solver);
     this.ice = new Ice(renderer, solver);
     waters.time = this.time;
+    scene.add(this.mouseCat.group, this.wildlife.group);
+    for (const m of hooks.groundMaterials) setGroundPrints(m, this.prints.target.texture);
+    this.renderer = renderer;
   }
 
   /** Change any part of the configuration; scenery is rebuilt as needed. */
@@ -116,6 +127,15 @@ export class World {
     }
     this.def = def;
 
+    // animals: rebuilt with the place, season and time
+    const critterKey = `${c.location}|${c.season}|${c.time}`;
+    if (critterKey !== this.critterKey) {
+      this.critterKey = critterKey;
+      this.mouseCat.configure(def.critters.mouse, c.season === 'winter');
+      this.wildlife.configure(def.critters.habitat, c.season, c.time);
+      this.prints.clear(this.renderer);
+    }
+
     // weather, leaves, ice, hot tub
     this.weather.set(c.weather);
     sway.strength.value = c.weather === 'wind' ? 0.012 : c.weather === 'rain' ? 0.005 : 0.002;
@@ -139,6 +159,7 @@ export class World {
     } else if (!on && this.ice.enabled) this.ice.disable();
   }
   private fluidId = 'water';
+  private critterKey = '';
 
   update(dt: number) {
     this.time.value += dt;
@@ -149,6 +170,9 @@ export class World {
     this.solver.setWind(this.weather.wind.x, this.weather.wind.y);
     this.leaves.update(dt, this.time.value, this.weather.wind);
     this.ice.update(dt);
+    this.mouseCat.update(dt);
+    this.wildlife.update(dt, this.time.value);
+    this.prints.update(this.renderer, dt);
   }
 
   /** the current location's scenery group (for tests) */

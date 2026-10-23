@@ -28,7 +28,7 @@
 import * as THREE from 'three';
 import type { ShallowWaterSolver } from '../physics/solver';
 import type { FluidProperties } from '../physics/fluids';
-import { NOISE } from './glsl';
+import { NOISE, ICE_BAND } from './glsl';
 
 export function createWaterMesh(solver: ShallowWaterSolver) {
   const [ox, oz] = solver.origin;
@@ -96,6 +96,7 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
       varying vec3 vWPos;
       varying vec2 vUv;
       ${NOISE}
+      ${ICE_BAND}
 
       // Exact Fresnel reflectance for unpolarised light at a dielectric
       // interface (average of s- and p-polarisations).
@@ -234,6 +235,9 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         // has been cracked; a sharp mirror sheen at grazing angles
         if (uIceOn > 0.5) {
           vec2 ic = texture2D(uIce, vUv).rg;
+          // the ice texture lives on the simulation grid; its outline is
+          // redrawn here per pixel so the edge never shows grid steps
+          ic.r = min(smoothstep(0.0, 0.6, ic.r), iceBand(vWPos.xz, shp.r));
           if (ic.r > 0.01) {
             vec3 up = vec3(0.0, 1.0, 0.0);
             float cv = clamp(dot(up, V), 0.0, 1.0);
@@ -244,7 +248,7 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
             vec3 v = voronoi(vWPos.xz * 22.0);
             float line = smoothstep(0.06, 0.0, v.y - v.x) * ic.g;
             iceCol = mix(iceCol, vec3(0.97, 0.99, 1.0) * (uAmbient * 0.8 + uSunColor * 0.2), line * 0.8);
-            col = mix(col, iceCol, smoothstep(0.0, 0.6, ic.r));
+            col = mix(col, iceCol, ic.r);
           }
         }
 

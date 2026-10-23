@@ -79,6 +79,11 @@ const def: LocationDef = {
   id: 'lionsgate',
   shape: () => ({ kind: 'blob', seed: 13, rx: 1.0, rz: 0.6 }),
   ground: { style: 'shore', a: '#8f8b85', b: '#a39582', c: '#bfae8e', bed: '#857560', bedAccent: '#7d7a74' },
+  critters: {
+    // between the seawall stones
+    mouse: { from: [-2.4, -4.7], to: [2.6, -5.0], hide: 'gap' },
+    habitat: { birds: ['gulls', 'gulls', 'geese', 'crows'], water: [-60, -12, 60, -200] },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season, waters } = ctx;
@@ -92,7 +97,17 @@ const def: LocationDef = {
     // seawall stones along the near shoreline
     const r = rng(23);
     const stones: [number, number, number, number][] = [];
-    for (let k = 0; k < 5; k++) stones.push([(k - 2) * 3.4 + r() * 1.5, -5.6 - r() * 1.2, 0.25 + r() * 0.35, 40 + k]);
+    // rocks washed up and left by the tide: two loose groups on either side,
+    // scattered over the beach at different distances (the view of the
+    // bridge through the middle stays open)
+    for (let k = 0; k < 9; k++) {
+      const side = k % 2 ? 1 : -1;
+      const big = r() < 0.3;
+      const s = big ? 0.3 + r() * 0.2 : 0.1 + r() * 0.13;
+      stones.push([side * (3.2 + r() * 6.5), -3.4 - r() * 3.0, s, 40 + k]);
+    }
+    // two rocks with a gap between them, where the mouse lives
+    stones.push([2.15, -5.35, 0.3, 71], [3.1, -5.4, 0.34, 72]);
     g.add(boulders(stones, ctx.sdfAt, { stone: '#7e7c78', moss: '#5b6a3a', mossAmount: 0.3, snow: season === 'winter' }));
     // the bridge, ~1.4 km out, scaled to stay inside the far plane
     const bridgeCol = hazed('#3f7a5c', haze, 1400, 2400).lerp(new THREE.Color('#14261e'), night * 0.6);

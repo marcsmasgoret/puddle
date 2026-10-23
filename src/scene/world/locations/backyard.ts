@@ -10,6 +10,11 @@ const def: LocationDef = {
   id: 'backyard',
   shape: () => ({ kind: 'roundRect', hw: 0.95, hd: 0.62, r: 0.22 }),
   ground: { style: 'tile', a: '#d8cfbf', b: '#d0c6b4', c: '#b0a593', bed: '#3f9cc4', bedAccent: '#e3f0f4' },
+  critters: {
+    // along the bottom of the fence and out through a gap under it
+    mouse: { from: [-3.0, -5.08], to: [2.1, -5.08], hide: 'gap' },
+    habitat: { birds: ['songbirds', 'crows'], trees: [[-3.5, -4.6], [3.8, -4.7], [6.5, -6.5]], rabbits: [-5, -4.8, 5, -2.2] },
+  },
   freezes: () => false,
   hotTub: (s) => s === 'winter',
   build(ctx) {

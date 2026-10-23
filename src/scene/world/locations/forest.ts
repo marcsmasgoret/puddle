@@ -9,6 +9,10 @@ const def: LocationDef = {
   id: 'forest',
   shape: () => ({ kind: 'blob', seed: 7 }),
   ground: { style: 'forest', a: '#6a5639', b: '#5f7336', c: '#7b5634', bed: '#7a6a52', bedAccent: '#8a877b' },
+  critters: {
+    mouse: { from: [-2.4, -2.3], to: [2.3, -2.7], hide: 'hole' },
+    habitat: { birds: ['songbirds', 'crows', 'geese'], trees: [[-4, -6], [4.5, -7], [-6, -9.5], [6.5, -10]], rabbits: [-7, -9, 7, -3], deer: true, fox: true },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season } = ctx;

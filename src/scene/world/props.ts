@@ -164,20 +164,27 @@ function pineGeometry(seed: number, snow: boolean) {
     const f = t / tiers;
     const radius = 0.62 * (1 - f * 0.85) * (0.9 + 0.2 * r());
     const height = 1.0 * (1 - f * 0.4);
-    const cone = new THREE.ConeGeometry(radius, height, 7, 1, true);
+    const cone = new THREE.ConeGeometry(radius, height, 7, 3, true);
     cone.rotateY(r() * Math.PI);
-    cone.translate(0, 0.35 + f * 3.3 + height / 2, 0);
-    const g = setColor(cone, new THREE.Color('#2f4a2c').multiplyScalar(0.85 + 0.25 * f));
+    const green = new THREE.Color('#2f4a2c').multiplyScalar(0.85 + 0.25 * f);
+    const g = setColor(cone, green);
     if (snow) {
-      // snow settles on the upper faces of each tier
-      const n = g.attributes.normal as THREE.BufferAttribute;
+      // snow settles on the upper part of each tier and thins toward the
+      // drooping tips, so the tree still reads as a dark pine under a load
+      // of snow (every face of a cone points the same amount upward, so a
+      // normal test alone would turn the whole tree white)
+      const pos = g.attributes.position as THREE.BufferAttribute;
       const col = g.attributes.color as THREE.BufferAttribute;
-      g.computeVertexNormals();
+      const white = new THREE.Color(0.9, 0.93, 0.96);
+      const c = new THREE.Color();
       for (let k = 0; k < col.count; k++) {
-        const up = n.getY(k);
-        if (up > 0.35) col.setXYZ(k, 0.9, 0.93, 0.96);
+        const t = pos.getY(k) / height + 0.5; // 0 at the rim, 1 at the apex
+        const s = THREE.MathUtils.smoothstep(t, 0.3, 0.85) * 0.9;
+        c.copy(green).lerp(white, s);
+        col.setXYZ(k, c.r, c.g, c.b);
       }
     }
+    g.translate(0, 0.35 + f * 3.3 + height / 2, 0);
     parts.push(g);
   }
   const g = mergeGeometries(parts);

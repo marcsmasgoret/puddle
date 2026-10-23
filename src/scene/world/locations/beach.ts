@@ -28,6 +28,10 @@ const def: LocationDef = {
   id: 'beach',
   shape: () => ({ kind: 'blob', seed: 3, rx: 1.0, rz: 0.6, wobble: 1.2 }),
   ground: { style: 'sand', a: '#dcc8a0', b: '#cdb388', c: '#e8d8b4', bed: '#b79c74', bedAccent: '#a39478' },
+  critters: {
+    mouse: { from: [-2.8, -3.1], to: [2.7, -2.8], hide: 'grass' },
+    habitat: { birds: ['gulls', 'gulls', 'songbirds'], water: [-40, -12, 40, -70] },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season, waters } = ctx;

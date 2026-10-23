@@ -104,24 +104,65 @@ float lapEta(ivec2 c) {
 // down until ρ g Δη balances it.
 float pressAt(ivec2 c) { return inGrid(c) ? texelFetch(uPressure, c, 0).r : 0.0; }
 
-// Bilinear sample of the u component at a point p in grid coordinates.
-// u(i-½,j) lives at (i, j+½), so shift by (0, ½) before interpolating.
-float sampleU(vec2 p) {
-  vec2 f = p - vec2(0.0, 0.5);
-  ivec2 i0 = ivec2(floor(f));
-  vec2 t = f - vec2(i0);
-  float a = S(i0).g, b = S(i0 + ivec2(1, 0)).g;
-  float c = S(i0 + ivec2(0, 1)).g, d = S(i0 + ivec2(1, 1)).g;
-  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+// ── Advection, momentum-conserving (Stelling & Duinmeijer 2003) ──────────
+// The velocity form u_t + (u·∇)u is exact for smooth flow, but across a
+// bore (a breaking wave front, a dam break) it conserves the wrong quantity
+// and the front travels too slowly. Writing the conserved momentum hu and
+// dividing out h gives the form used here:
+//     (u·∇)u  →  (1/h) [ ∇·(q u) − u ∇·q ],   q = h u (discharge)
+// discretised with discharges taken from the same upwind face depths as the
+// height pass and upwind velocities, over the control volume around each
+// face. For smooth flow it is an ordinary first-order upwind scheme; across a
+// bore it gives the correct jump conditions (mass and momentum).
+
+// depth carried through a face, upwind in the surface height (as in the
+// height pass); a, b are the cells on the negative and positive sides
+float upDepth(ivec2 a, ivec2 b, float vel) {
+  float etaUp = vel > 0.0 ? S(a).r : S(b).r;
+  return max(0.5 * (H(a) + H(b)) + etaUp, 0.0);
 }
-// v(i,j-½) lives at (i+½, j).
-float sampleV(vec2 p) {
-  vec2 f = p - vec2(0.5, 0.0);
-  ivec2 i0 = ivec2(floor(f));
-  vec2 t = f - vec2(i0);
-  float a = S(i0).b, b = S(i0 + ivec2(1, 0)).b;
-  float c = S(i0 + ivec2(0, 1)).b, d = S(i0 + ivec2(1, 1)).b;
-  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
+// discharge through the x-face on the left of cell c, and the z-face below it
+float qx(ivec2 c) { float u = S(c).g; return u * upDepth(c - ivec2(1, 0), c, u); }
+float qz(ivec2 c) { float v = S(c).b; return v * upDepth(c - ivec2(0, 1), c, v); }
+float depthAt(ivec2 c) { return max(H(c) + S(c).r, 0.0); }
+
+// (u·∇)u at the u-face on the left of cell c. Its control volume spans
+// from the centre of cell W to the centre of cell c, one row tall.
+float advectU(ivec2 c) {
+  ivec2 W = c - ivec2(1, 0), E = c + ivec2(1, 0), N = c + ivec2(0, 1), So = c - ivec2(0, 1);
+  float uf = S(c).g;
+  float hbar = max(0.5 * (depthAt(W) + depthAt(c)), uHMin);
+  // along x: discharges at the two cell centres, upwind velocities there
+  float Qc = 0.5 * (qx(c) + qx(E));
+  float QW = 0.5 * (qx(W) + qx(c));
+  float uc = Qc > 0.0 ? uf : S(E).g;
+  float uW = QW > 0.0 ? S(W).g : uf;
+  float ax = Qc * uc - QW * uW - uf * (Qc - QW);
+  // along z: discharges through the top and bottom edges of the volume
+  float Qt = 0.5 * (qz(N) + qz(W + ivec2(0, 1)));
+  float Qb = 0.5 * (qz(c) + qz(W));
+  float ut = Qt > 0.0 ? uf : S(N).g;
+  float ub = Qb > 0.0 ? S(So).g : uf;
+  float az = Qt * ut - Qb * ub - uf * (Qt - Qb);
+  return (ax + az) / (uDx * hbar);
+}
+
+// (u·∇)v at the v-face below cell c (between cell So and cell c).
+float advectV(ivec2 c) {
+  ivec2 So = c - ivec2(0, 1), N = c + ivec2(0, 1), E = c + ivec2(1, 0), W = c - ivec2(1, 0);
+  float vf = S(c).b;
+  float hbar = max(0.5 * (depthAt(So) + depthAt(c)), uHMin);
+  float Qc = 0.5 * (qz(c) + qz(N));
+  float QS = 0.5 * (qz(So) + qz(c));
+  float vc = Qc > 0.0 ? vf : S(N).b;
+  float vS = QS > 0.0 ? S(So).b : vf;
+  float az = Qc * vc - QS * vS - vf * (Qc - QS);
+  float Qr = 0.5 * (qx(E) + qx(So + ivec2(1, 0)));
+  float Ql = 0.5 * (qx(c) + qx(So));
+  float vr = Qr > 0.0 ? vf : S(E).b;
+  float vl = Ql > 0.0 ? S(W).b : vf;
+  float ax = Qr * vr - Ql * vl - vf * (Qr - Ql);
+  return (ax + az) / (uDx * hbar);
 }
 
 ${STRAIN_GLSL}
@@ -171,12 +212,9 @@ void main() {
   // ── u on the face between cell W and cell c ─────────────────────────────
   float uNew = 0.0;
   if (wet(c) && wet(W)) {
-    vec2 p = vec2(c) + vec2(0.0, 0.5);
     // velocity at this face: u is here, v is the average of the 4 nearby v's
     float vHere = 0.25 * (S(W).b + s.b + S(W + ivec2(0, 1)).b + S(c + ivec2(0, 1)).b);
-    // (u·∇)u by semi-Lagrangian back-tracing: the value arriving here is the
-    // value that was one time step upstream.
-    float u = sampleU(p - uDt / uDx * vec2(s.g, vHere));
+    float u = s.g - uDt * advectU(c);
 
     float etaW = S(W).r;
     float hFace = 0.5 * (H(c) + H(W)) + 0.5 * (eta + etaW);
@@ -208,9 +246,8 @@ void main() {
   // ── v on the face between cell Sth and cell c ───────────────────────────
   float vNew = 0.0;
   if (wet(c) && wet(Sth)) {
-    vec2 p = vec2(c) + vec2(0.5, 0.0);
     float uHere = 0.25 * (S(Sth).g + s.g + S(Sth + ivec2(1, 0)).g + S(c + ivec2(1, 0)).g);
-    float v = sampleV(p - uDt / uDx * vec2(uHere, s.b));
+    float v = s.b - uDt * advectV(c);
 
     float etaS = S(Sth).r;
     float hFace = 0.5 * (H(c) + H(Sth)) + 0.5 * (eta + etaS);

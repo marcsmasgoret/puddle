@@ -14,6 +14,12 @@ import { WetMap } from './render/wetmap';
 import { createPanel } from './ui/panel';
 import { createFullscreenButton } from './ui/fullscreen';
 import { createDrawer } from './ui/drawer';
+import { createMuteButton } from './ui/sound';
+import { Audio, haptic } from './audio/audio';
+import { ambienceFor } from './audio/ambience';
+import { Engineering } from './ui/engineering';
+import { Overlay } from './render/overlay';
+import { AdaptiveQuality } from './render/quality';
 import { Toys } from './scene/toys';
 import { Stones } from './scene/stones';
 import { Fishing } from './scene/fishing';
@@ -44,6 +50,11 @@ const phoneish = navigator.maxTouchPoints > 0 && Math.min(screen.width, screen.h
 /** the fluid chosen in the panel (the hot tub swaps water for 38 °C water) */
 let chosenFluid: FluidProperties = FLUIDS[settings.fluid] ?? FLUIDS.water;
 let fluid: FluidProperties = chosenFluid;
+/** the fluid with its measured properties (engineering sliders may modify `fluid`) */
+let measuredFluid: FluidProperties = chosenFluid;
+/** gravity [m/s²]: Earth's, unless the engineering slider changes it */
+let gravity = GRAVITY;
+let engineering: Engineering | undefined;
 
 // ── physics ──────────────────────────────────────────────────────────────────
 const grid = makeGrid(pickResolution());
@@ -91,6 +102,15 @@ function dropImpact(x: number, z: number, r: number, v: number): Impulse {
   return { x, z, radius: R, pressureImpulse: (fluid.density * volume * v) / (Math.PI * R * R), volume };
 }
 
+// ── sound ────────────────────────────────────────────────────────────────────
+const audio = new Audio();
+audio.volume = settings.volume;
+audio.muted = settings.muted;
+// browsers only allow sound after a user gesture
+const unlockAudio = () => audio.unlock();
+window.addEventListener('pointerdown', unlockAudio, { capture: true });
+window.addEventListener('keydown', unlockAudio, { capture: true });
+
 // ── the world: location, season, time of day, weather ───────────────────────
 const waters: Waters = {
   reflection: { texture: water.uniforms.uReflection.value as THREE.Texture, matrix: water.uniforms.uReflMatrix.value as THREE.Matrix4 },
@@ -110,6 +130,7 @@ const world = new World(
     },
     onHotTub(on) {
       applyFluid(chosenFluid, on);
+      audio.setAmbience(ambienceFor(world.config, on));
       if (on) toast('the pool is a hot tub for the winter <small>· 38 °C</small>', 3500);
     },
   },
@@ -120,6 +141,7 @@ const world = new World(
 
 /** lighting changed: pass the sun and sky to the hand-written shaders */
 function syncMood() {
+  audio.setAmbience(ambienceFor(world.config, world.hotTub));
   const m = world.env.mood;
   water.uniforms.uSunDir.value.copy(world.env.sunDir);
   water.uniforms.uSunColor.value.copy(m.sunColor).multiplyScalar(m.sunIntensity);
@@ -129,6 +151,7 @@ function syncMood() {
 }
 
 // ── layout ───────────────────────────────────────────────────────────────────
+const quality = new AdaptiveQuality(() => resize(), grid.nx);
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   const f = frameCamera(solver.shape.outline, w / h);
@@ -137,7 +160,7 @@ function resize() {
   camera.position.copy(f.position);
   camera.lookAt(f.target);
   camera.updateProjectionMatrix();
-  pipeline.setSize(w, h, Math.min(window.devicePixelRatio, phoneish ? 2 : 1.75));
+  pipeline.setSize(w, h, Math.min(window.devicePixelRatio, phoneish ? 2 : 1.75) * quality.scale);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -149,11 +172,13 @@ createFullscreenButton();
 // ── floating toys ────────────────────────────────────────────────────────────
 const toys = new Toys(scene, solver, renderer, camera, {
   impulse: (imp) => solver.addImpulse(imp),
-  onEntry(_kind, x, z, v, mass, radius) {
+  onEntry(kind, x, z, v, mass, radius) {
     // a toy landing is a small slap: same impact model, limited to the
     // momentum the toy actually carries (m·v)
+    if (kind === 'duck') audio.squeak();
     if (!isWater(x, z)) return;
-    const hit = computeSlap(v, solver.depthAt(x, z), fluid, GRAVITY, radius * 0.7, mass * v);
+    audio.entry(mass, v, chosenFluid.id);
+    const hit = computeSlap(v, solver.depthAt(x, z), fluid, gravity, radius * 0.7, mass * v);
     const launched = hit.sprayMass > 0 ? drops.spray(x, z, hit.radius, hit.sprayMass, hit.sprayMeanSpeed) : 0;
     solver.addImpulse({ x, z, radius: hit.radius, pressureImpulse: hit.pressureImpulse, volume: -launched });
   },
@@ -174,7 +199,9 @@ const stones = new Stones(
   (e) => {
     if (!isWater(e.x, e.z)) return;
     const R = Math.max(STONE.radius * 1.5, 1.5 * grid.dx);
-    world.ice.breakAt(e.x, e.z, 0.08);
+    if (world.ice.enabled) world.ice.breakAt(e.x, e.z, 0.08);
+    if (e.kind === 'skip' || e.kind === 'clatter') audio.skip(e.speed, chosenFluid.id);
+    if (e.kind === 'plop') audio.plop();
     if (e.kind === 'clatter') {
       // a jammed impact on oobleck: a brief matte patch, no spray
       jamMarks.unshift({ x: e.x, z: e.z, t: solver.simTime, s: 0.8 });
@@ -183,7 +210,7 @@ const stones = new Stones(
     }
     // the momentum the stone gave the fluid becomes a ripple; a hard hit
     // throws a little spray (same impact model as a slap)
-    const hit = computeSlap(e.speed, solver.depthAt(e.x, e.z), fluid, GRAVITY, STONE.radius, e.momentum);
+    const hit = computeSlap(e.speed, solver.depthAt(e.x, e.z), fluid, gravity, STONE.radius, e.momentum);
     const launched = hit.sprayMass > 0 ? drops.spray(e.x, e.z, R, hit.sprayMass, hit.sprayMeanSpeed) : 0;
     solver.addImpulse({ x: e.x, z: e.z, radius: R, pressureImpulse: Math.max(hit.pressureImpulse, e.momentum / (Math.PI * R * R)), volume: -launched });
     if (e.kind === 'skip') {
@@ -209,7 +236,8 @@ const stones = new Stones(
 );
 
 // ── fishing ──────────────────────────────────────────────────────────────────
-const fishing = new Fishing(scene, toys, camera, () => {});
+const fishing = new Fishing(scene, toys, camera, () => audio.nibble());
+fishing.onCast = () => audio.cast();
 
 function setMode(m: 'slap' | 'skip' | 'fish') {
   settings.mode = m;
@@ -256,15 +284,20 @@ function updateJamMarks() {
 
 function slapAt(x: number, z: number) {
   // a slap shatters any ice within reach of the hand
-  world.ice.breakAt(x, z, 0.08 + settings.strength * 0.14);
+  if (world.ice.enabled && solver.sdfAt(x, z) > -0.2) {
+    world.ice.breakAt(x, z, 0.08 + settings.strength * 0.14);
+    audio.crack();
+  }
   if (fluid.rheology.kind === 'shearThickening') {
     jamMarks.unshift({ x, z, t: solver.simTime, s: Math.min(1, 0.4 + settings.strength) });
     jamMarks.length = Math.min(jamMarks.length, 4);
   }
-  const slap = computeSlap(handSpeed(settings.strength), solver.depthAt(x, z), fluid, GRAVITY);
+  const slap = computeSlap(handSpeed(settings.strength), solver.depthAt(x, z), fluid, gravity);
   const launched = slap.sprayMass > 0 ? drops.spray(x, z, slap.radius, slap.sprayMass, slap.sprayMeanSpeed) : 0;
   solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
   lastSlap = { froude: +slap.froudeRequested.toFixed(2), sprayMl: +(launched * 1e6).toFixed(1) };
+  audio.slap(chosenFluid.id, settings.strength, launched * 1e6);
+  haptic(8 + settings.strength * 32);
 }
 
 attachPointer(canvas, camera, {
@@ -300,14 +333,22 @@ attachPointer(canvas, camera, {
   onCarryEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onSlap: slapAt,
   onStir(x0, z0, x1, z1, dt) {
+    const now = performance.now();
+    if (now - lastSwish > 110) {
+      lastSwish = now;
+      audio.stir(Math.hypot(x1 - x0, z1 - z0) / dt);
+    }
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
   },
 });
+
+let lastSwish = 0;
 
 // drops that land on the ground drain back into the puddle (see droplets.ts)
 let drainBack = 0;
 function updateDrops(dt: number) {
   for (const L of drops.step(dt)) {
+    if (Math.random() < 0.35) audio.dropLanded(L.radius, L.onWater);
     if (L.onWater) {
       solver.addImpulse(dropImpact(L.x, L.z, L.radius, L.speed));
     } else {
@@ -361,6 +402,7 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
   chosenFluid = chosen;
   const f = hot && chosen.id === 'water' ? HOT_WATER : chosen;
   fluid = f;
+  measuredFluid = f;
   world.updateIce(f.id);
   solver.setFluid(f);
   water.applyFluid(f);
@@ -380,6 +422,7 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
     dm.uTint.value.setRGB(...(o.absorption.map((k) => Math.exp(-k * d)) as [number, number, number]));
   } else dm.uTint.value.setRGB(1, 1, 1);
   wetMap.clear(renderer);
+  engineering?.fluidChanged();
 }
 
 // fingers held down on honey / oobleck
@@ -387,10 +430,29 @@ const held = new Map<number, HeldFinger>();
 let fingerLoads: Load[] = [];
 function updateHolds(dt: number) {
   for (const f of held.values()) f.t += dt;
-  fingerLoads = [...held.values()].map((f) => pressLoad(f, fluid.density, GRAVITY));
+  fingerLoads = [...held.values()].map((f) => pressLoad(f, fluid.density, gravity));
 }
 
 let markFluid: (v: FluidId) => void = () => {};
+panel.addSlider(
+  'Sound',
+  () => settings.volume,
+  (v) => {
+    settings.volume = v;
+    audio.setVolume(v);
+    saveSettings();
+  },
+  (v) => (v < 0.01 ? 'off' : `${Math.round(v * 100)} %`),
+  ['quiet', 'loud'],
+);
+createMuteButton(
+  () => settings.muted,
+  (m) => {
+    settings.muted = m;
+    audio.setMuted(m);
+    saveSettings();
+  },
+);
 markFluid = panel.addChoice<FluidId>(
   'Fluid',
   [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck']],
@@ -440,6 +502,15 @@ panel.addChoice<'slap' | 'skip' | 'fish'>(
   () => settings.mode,
   setMode,
 );
+panel.addButtons([
+  [
+    'Engineering mode',
+    () => {
+      panel.close();
+      engineering!.toggle();
+    },
+  ],
+]);
 world.ready().then(() => {
   syncMood();
   applyFluid(chosenFluid);
@@ -451,9 +522,33 @@ document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
 const clock = new THREE.Timer();
 clock.connect(document);
 let fps = 60;
-const stats = { fps: 0, substeps: 0, dtMs: 0, grid: `${grid.nx}x${grid.nz}`, dxMm: +(grid.dx * 1000).toFixed(2), simTime: 0 };
+const stats = { cpuMs: 0, fps: 0, substeps: 0, dtMs: 0, grid: `${grid.nx}x${grid.nz}`, dxMm: +(grid.dx * 1000).toFixed(2), simTime: 0 };
 (window as unknown as { __stats: typeof stats }).__stats = stats;
 let paused = false;
+
+// ── engineering mode ─────────────────────────────────────────────────────────
+const overlay = new Overlay(solver);
+engineering = new Engineering(
+  solver,
+  overlay,
+  {
+    base: () => measuredFluid,
+    setFluid(f) {
+      fluid = f;
+      solver.updateFluid(f);
+      drops.fluid = f;
+    },
+    setGravity(g) {
+      gravity = g;
+      solver.gravity = g;
+    },
+    bodies: () => toys.toys.map((t) => ({ kind: t.kind, body: t.body })),
+    lastSlap: () => lastSlap,
+    stats,
+  },
+  __COMMIT__,
+);
+if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
 // test hooks (used by the automated screenshot checks)
 (window as unknown as { __puddle: unknown }).__puddle = {
   solver,
@@ -488,6 +583,20 @@ let paused = false;
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
   },
   setPaused: (p: boolean) => (paused = p),
+  mouse: (chase: boolean) => world.mouseCat.trigger(chase),
+  renderer,
+  printsMax: () => {
+    const t = world.prints.target;
+    const buf = new Uint16Array(t.width * t.height * 4);
+    renderer.readRenderTargetPixels(t, 0, 0, t.width, t.height, buf);
+    let m = 0, n = 0;
+    for (let k = 0; k < buf.length; k += 4) {
+      const v = THREE.DataUtils.fromHalfFloat(buf[k]);
+      if (v > 0.05) n++;
+      m = Math.max(m, v);
+    }
+    return { max: m, texels: n };
+  },
 };
 
 
@@ -495,6 +604,8 @@ renderer.setAnimationLoop(() => {
   if (document.hidden || paused) return; // simulation pauses while the tab is hidden
   clock.update();
   const dt = clock.getDelta();
+  const cpu0 = performance.now();
+  quality.sample(dt);
   fps = fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
   maybeDrip(solver.simTime);
   updateHolds(Math.min(dt, 1 / 20));
@@ -503,11 +614,11 @@ renderer.setAnimationLoop(() => {
   hotTubJets(Math.min(dt, 1 / 20));
   water.uniforms.uIce.value = world.ice.texture;
   water.uniforms.uIceOn.value = world.ice.enabled ? 1 : 0;
-  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY, (t) => {
+  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, gravity, (t) => {
     const f = fishing.forceFor(t) ?? new THREE.Vector3();
     return f.add(world.weather.windForce(WINDAGE[t.kind]));
   });
-  stones.update(Math.min(dt, 1 / 20), fluid, GRAVITY);
+  stones.update(Math.min(dt, 1 / 20), fluid, gravity);
   fishing.update(Math.min(dt, 1 / 20));
   solver.setLoads([...fingerLoads, ...toyLoads, ...world.weather.loads()]);
   updateDrops(Math.min(dt, 1 / 20));
@@ -515,7 +626,12 @@ renderer.setAnimationLoop(() => {
   wetMap.update(renderer, Math.min(dt, 1 / 20));
   caustics.update(renderer, world.env.sunDir);
   pipeline.render(dt);
+  if (engineering!.isOpen) {
+    overlay.render(renderer, camera, toys.toys.map((t) => t.body), gravity);
+    engineering!.update(performance.now());
+  }
   stats.fps = Math.round(fps);
+  stats.cpuMs = +(stats.cpuMs * 0.9 + (performance.now() - cpu0) * 0.1).toFixed(1);
   stats.substeps = solver.lastPlan?.substeps ?? 0;
   stats.dtMs = +((solver.lastPlan?.dt ?? 0) * 1000).toFixed(3);
   stats.simTime = +solver.simTime.toFixed(2);

@@ -38,3 +38,16 @@ vec3 voronoi(vec2 p) {
   return vec3(sqrt(d1), sqrt(d2), id);
 }
 `;
+
+/**
+ * Where a winter puddle is frozen: a band 5–14 cm wide along the shore,
+ * ragged with noise (needs NOISE). Shared by the ice growth pass, which runs
+ * on the simulation grid, and the water shader, which evaluates it per pixel
+ * so the ice edge stays crisp at any grid resolution.
+ */
+export const ICE_BAND = /* glsl */ `
+float iceBand(vec2 p, float sdf) {
+  float w = 0.05 + 0.09 * fbm(p * 3.0);
+  return sdf < 0.0 ? smoothstep(-w - 0.015, -w + 0.01, sdf) : 0.0;
+}
+`;

@@ -9,7 +9,7 @@
 // (strong extra damping), so waves stop at the ice edge.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { NOISE } from '../../render/glsl';
+import { NOISE, ICE_BAND } from '../../render/glsl';
 import type { ShallowWaterSolver } from '../../physics/solver';
 
 const MAX_BREAKS = 6;
@@ -46,13 +46,13 @@ export class Ice {
           uniform int uCount;
           uniform vec4 uBreak[${MAX_BREAKS}];   // (x, z, radius, unused)
           ${NOISE}
+          ${ICE_BAND}
           void main() {
             vec2 uv = gl_FragCoord.xy / uSize;
             vec2 p = uOrigin + uv * uExtent;
             float sdf = texture2D(uShape, uv).r;
             // frozen extent: a band 5–14 cm wide, ragged with noise
-            float w = 0.05 + 0.09 * fbm(p * 3.0);
-            float target = sdf < 0.0 ? smoothstep(-w - 0.015, -w + 0.01, sdf) : 0.0;
+            float target = iceBand(p, sdf);
             vec2 prev = uReset > 0.5 ? vec2(target, 0.0) : texture2D(uPrev, uv).rg;
             // refreezing: grow back toward the frozen extent over ~60 s,
             // cracks slowly heal

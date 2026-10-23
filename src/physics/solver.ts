@@ -204,6 +204,16 @@ export class ShallowWaterSolver {
 
   /** Switch fluid: new properties, and the puddle starts calm. */
   setFluid(f: FluidProperties) {
+    this.updateFluid(f);
+    this.reset();
+  }
+
+  /**
+   * Change the fluid's properties while it is moving (engineering sliders).
+   * Density, σ and viscosity all enter the equations per step, so the new
+   * values simply apply from the next step on.
+   */
+  updateFluid(f: FluidProperties) {
     this.fluid = f;
     const r = rheologyUniforms(f);
     for (const m of [this.velocityMat, this.surfaceMat]) {
@@ -211,7 +221,14 @@ export class ShallowWaterSolver {
       (m.uniforms.uRheo.value as THREE.Vector4).set(r.nu0, r.gammaC, r.n, r.nuMax);
       m.uniforms.uTauY.value = r.tauY;
     }
-    this.reset();
+  }
+
+  /** Smagorinsky constant C_s of the breaking-wave turbulence model. */
+  get smagorinsky(): number {
+    return this.velocityMat.uniforms.uCs.value;
+  }
+  set smagorinsky(c: number) {
+    this.velocityMat.uniforms.uCs.value = c;
   }
 
   /** Flatten the surface and stop all motion. */
@@ -351,6 +368,41 @@ export class ShallowWaterSolver {
     const out = new Float32Array(nx * nz * 4);
     this.renderer.readRenderTargetPixels(this.state[0], 0, 0, nx, nz, out);
     return out;
+  }
+
+  /** Read a block of cells (RGBA per cell) back to the CPU. */
+  readRegion(i: number, j: number, w: number, h: number): Float32Array {
+    const out = new Float32Array(w * h * 4);
+    this.renderer.readRenderTargetPixels(this.state[0], i, j, w, h, out);
+    return out;
+  }
+
+  /**
+   * Replace the whole state with given values (RGBA = η, u, v, θ per cell).
+   * Used by the validation tests to start standing waves and dam breaks.
+   */
+  loadState(data: Float32Array) {
+    const { nx, nz } = this.grid;
+    const tex = new THREE.DataTexture(data, nx, nz, THREE.RGBAFormat, THREE.FloatType);
+    tex.needsUpdate = true;
+    const copy = new THREE.ShaderMaterial({
+      vertexShader: fullscreenVertex,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        precision highp sampler2D;
+        uniform sampler2D uSrc;
+        void main() { gl_FragColor = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0); }`,
+      uniforms: { uSrc: { value: tex } },
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.renderer.setRenderTarget(this.state[0]);
+    this.quad.material = copy;
+    this.quad.render(this.renderer);
+    this.renderer.setRenderTarget(null);
+    copy.dispose();
+    tex.dispose();
+    this.pending.length = 0;
   }
 
   /** Summary numbers for tests: max |η|, max |u|, total volume change. */

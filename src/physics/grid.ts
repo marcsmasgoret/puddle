@@ -48,9 +48,18 @@ export function makeGrid(cellsAcross: number): Grid {
   return { nx: cellsAcross, nz: Math.round(DOMAIN_Z / dx), dx };
 }
 
+/** localStorage key: set when this device was too slow for the full grid */
+export const GRID_HINT_KEY = 'puddle.grid';
+
 export function pickResolution(): number {
   const q = new URLSearchParams(location.search).get('grid');
   if (q) return Math.max(64, Math.min(1024, parseInt(q, 10) || 512));
+  try {
+    const hint = localStorage.getItem(GRID_HINT_KEY);
+    if (hint) return Math.max(64, Math.min(1024, parseInt(hint, 10) || 512));
+  } catch {
+    /* storage blocked */
+  }
   const touch = navigator.maxTouchPoints > 0;
   const small = Math.min(screen.width, screen.height) < 900;
   return touch && small ? 256 : 512;

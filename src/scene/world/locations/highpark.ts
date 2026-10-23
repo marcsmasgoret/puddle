@@ -29,6 +29,17 @@ const def: LocationDef = {
   id: 'highpark',
   shape: () => ({ kind: 'blob', seed: 9, rx: 1.0, rz: 0.62 }),
   ground: { style: 'park', a: '#5e7f3b', b: '#6f9247', c: '#8a6f4a', bed: '#6d5a43', bedAccent: '#7c776c' },
+  critters: {
+    mouse: { from: [-2.8, -2.9], to: [2.6, -3.4], hide: 'hole' },
+    habitat: {
+      birds: ['songbirds', 'geese', 'ducks', 'crows'],
+      trees: [[-6.5, -7], [7.5, -9], [-12, -14], [13, -6]],
+      rabbits: [-7, -14, 7, -3],
+      fox: true,
+      water: [-80, -22, 80, -70],
+      frogs: true,
+    },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season, waters } = ctx;

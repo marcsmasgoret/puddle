@@ -17,6 +17,8 @@ export class WetMap {
   private decayMat: THREE.ShaderMaterial;
   private pending: { x: number; z: number; r: number }[] = [];
   private dummy = new THREE.Object3D();
+  private fadeAcc = 0;
+  private live = 0;
 
   constructor() {
     this.target = new THREE.WebGLRenderTarget(RES[0], RES[1], {
@@ -98,12 +100,21 @@ export class WetMap {
   }
 
   update(renderer: THREE.WebGLRenderer, dt: number) {
+    // dry ground: skip; otherwise dry it out four times a second
+    this.fadeAcc += dt;
+    const doFade = this.live > 0 && this.fadeAcc >= 0.25;
+    if (!doFade && !this.pending.length) return;
     const auto = renderer.autoClear;
     renderer.autoClear = false;
     renderer.setRenderTarget(this.target);
-    this.decayMat.uniforms.uFactor.value = Math.exp(-dt / DRY_TAU);
-    renderer.render(this.decayScene, this.camera);
+    if (doFade) {
+      this.decayMat.uniforms.uFactor.value = Math.exp(-this.fadeAcc / DRY_TAU);
+      renderer.render(this.decayScene, this.camera);
+      this.live -= this.fadeAcc;
+      this.fadeAcc = 0;
+    }
     if (this.pending.length) {
+      this.live = DRY_TAU * 5;
       const batch = this.pending.splice(0, 256);
       batch.forEach((s, i) => {
         this.dummy.position.set(s.x, 0, s.z);

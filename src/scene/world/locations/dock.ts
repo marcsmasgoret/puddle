@@ -8,6 +8,11 @@ const def: LocationDef = {
   id: 'dock',
   shape: () => ({ kind: 'blob', seed: 5, rx: 0.95, rz: 0.55 }),
   ground: { style: 'planks', a: '#8d6c4b', b: '#a6825c', c: '#3b2a1c', bed: '#6f5238', bedAccent: '#6f5238' },
+  critters: {
+    // across the dock and down between the planks
+    mouse: { from: [-2.6, -5.0], to: [2.4, -4.6], hide: 'gap' },
+    habitat: { birds: ['gulls', 'ducks', 'geese'], water: [-40, -10, 40, -90], frogs: true, loons: true },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season, waters } = ctx;

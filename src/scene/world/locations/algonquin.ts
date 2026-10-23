@@ -66,6 +66,19 @@ const def: LocationDef = {
   id: 'algonquin',
   shape: () => ({ kind: 'blob', seed: 21, rx: 0.95, rz: 0.6, wobble: 1.3 }),
   ground: { style: 'granite', a: '#a99088', b: '#8e8682', c: '#a3a77c', bed: '#6d6158', bedAccent: '#9a8a7d' },
+  critters: {
+    // out from under the canoe, across the rock to a crevice
+    mouse: { from: [1.9, -2.1], to: [-0.4, -4.1], hide: 'hole' },
+    habitat: {
+      birds: ['songbirds', 'geese', 'ducks'],
+      trees: [[-6.5, -5.5], [7.5, -7], [-9.5, -8], [10, -10]],
+      deer: true,
+      fox: true,
+      water: [-40, -9, 40, -90],
+      frogs: true,
+      loons: true,
+    },
+  },
   freezes: () => true,
   build(ctx) {
     const { mood, season, waters } = ctx;

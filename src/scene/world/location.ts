@@ -6,6 +6,8 @@ import type { ShapeSpec } from '../../physics/puddleShape';
 import type { GroundLook } from '../../render/ground';
 import type { Mood, Season, Weather } from './palettes';
 import type { Waters } from './props';
+import type { MouseSpots } from '../animals/mouseCat';
+import type { Habitat } from '../animals/wildlife';
 
 export type LocationId = 'forest' | 'beach' | 'city' | 'backyard' | 'dock' | 'highpark' | 'lionsgate' | 'algonquin';
 
@@ -45,6 +47,8 @@ export interface LocationDef {
   /** backyard pool in winter */
   hotTub?(season: Season): boolean;
   build(ctx: LocationContext): BuiltLocation;
+  /** where the mouse lives, and what else lives here */
+  critters: { mouse: MouseSpots; habitat: Habitat };
 }
 
 export const loaders: Record<LocationId, () => Promise<{ default: LocationDef }>> = {

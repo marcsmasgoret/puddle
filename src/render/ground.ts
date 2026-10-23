@@ -65,6 +65,8 @@ export function createGroundMaterial(solver: ShallowWaterSolver, caustics: THREE
     uLeaves: { value: 0 },
     uGrass: { value: new THREE.Vector3(1, 1, 1) },
     uRain: { value: 0 },
+    uPrints: { value: null as THREE.Texture | null },
+    uPrintsArea: { value: new THREE.Vector4(-8, -9, 16, 9) },
   };
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
@@ -80,6 +82,8 @@ export function createGroundMaterial(solver: ShallowWaterSolver, caustics: THREE
         uniform vec2 uOrigin, uExtent, uWetSize;
         uniform vec3 uStain, uA, uB, uC, uBed, uBedAccent, uGrass;
         uniform float uWets, uRingRough, uSnow, uLeaves, uRain;
+        uniform sampler2D uPrints;
+        uniform vec4 uPrintsArea;
         uniform int uStyle;
         ${NOISE}
         float gWet; float gGloss; float gSdf; vec2 gUv; float gSnow;
@@ -167,14 +171,43 @@ export function createGroundMaterial(solver: ShallowWaterSolver, caustics: THREE
         // fallen leaves (autumn): scattered blots in warm colours
         if (uLeaves > 0.0) {
           // drifts of leaves: small, varied, gathered in patches
-          vec2 lw = vec2(vnoise(p * 9.0), vnoise(p * 9.0 + 4.0)) * 0.5;
-          vec3 lv = voronoi(p * 26.0 + lw);
-          float leafPatch = smoothstep(0.35, 0.65, fbm(p * 0.8 + 2.0));
+          float leafPatch = smoothstep(0.3, 0.7, fbm(p * 0.8 + 2.0));
           // fewer on swept surfaces (street, deck, dock) than on the ground
           float amt = uLeaves * ((uStyle == 2 || uStyle == 3 || uStyle == 4) ? 0.3 : 1.0);
-          float leaf = smoothstep(0.3, 0.18, lv.x * (1.0 + 0.6 * fract(lv.z * 13.0))) * step(1.0 - amt * 0.7 * leafPatch, lv.z);
-          vec3 lc = mix(vec3(0.75, 0.32, 0.08), vec3(0.85, 0.62, 0.12), fract(lv.z * 7.0));
-          col = mix(col, lc, leaf);
+          // each grid cell may hold one leaf: random position, angle, size
+          // and colour; the shape is an ellipse pinched to a point at both
+          // ends, with a darker midrib
+          vec2 lp = p * 14.0;
+          vec2 cell = floor(lp);
+          float leaf = 0.0, rib = 0.0;
+          vec3 lc = vec3(0.0);
+          for (int j = -1; j <= 1; j++)
+          for (int i = -1; i <= 1; i++) {
+            vec2 c = cell + vec2(float(i), float(j));
+            float h = hash12(c);
+            if (h > amt * (0.25 + 0.85 * leafPatch)) continue;
+            float h2 = hash12(c + 17.3), h3 = hash12(c + 41.9);
+            vec2 q = lp - c - vec2(hash12(c + 3.1), hash12(c + 8.7));
+            float a = h2 * 6.2832;
+            q = mat2(cos(a), -sin(a), sin(a), cos(a)) * q;
+            float L = 0.38 + 0.22 * h3;               // half-length (cells)
+            float w = L * (0.42 + 0.12 * h2) * (1.0 - smoothstep(0.2, 1.0, abs(q.x) / L) * 0.85);
+            float inside = smoothstep(0.03, 0.0, abs(q.y) - w) * step(abs(q.x), L);
+            if (inside > leaf) {
+              leaf = inside;
+              rib = smoothstep(0.035, 0.0, abs(q.y)) * step(abs(q.x), L * 0.9);
+              // maple red, burnt orange, ochre, faded brown
+              float t = fract(h3 * 7.3);
+              lc = t < 0.25 ? vec3(0.58, 0.15, 0.07) : t < 0.55 ? vec3(0.72, 0.32, 0.08) : t < 0.8 ? vec3(0.7, 0.48, 0.12) : vec3(0.38, 0.23, 0.12);
+              lc *= 0.75 + 0.3 * hash12(c + 5.5);
+            }
+          }
+          // far away a leaf is smaller than a few pixels: blend toward the
+          // average colour of the litter instead of shimmering
+          float far = smoothstep(0.06, 0.2, length(fwidth(lp)));
+          vec3 nearCol = mix(col, mix(lc, lc * 0.6, rib * 0.5), leaf);
+          float cover = clamp(amt * (0.25 + 0.85 * leafPatch), 0.0, 1.0) * 0.4;
+          col = mix(nearCol, mix(col, vec3(0.6, 0.31, 0.1), cover), far);
         }
         col *= 0.88 + 0.24 * fine;
         float underwater = 1.0 - smoothstep(-0.03, 0.0, gSdf);
@@ -194,7 +227,12 @@ export function createGroundMaterial(solver: ShallowWaterSolver, caustics: THREE
         col *= mix(vec3(1.0), uStain, gWet);
         // snow cover: thinner near the water (meltwater) and patchy at the edges
         gSnow = uSnow * smoothstep(0.05, 0.25, gSdf) * smoothstep(0.25, 0.45, fbm(p * 1.5) + uSnow * 0.5);
+        // footprints pressed into the snow: shadowed blue-grey hollows
+        vec2 puv = vec2((vWPos.x - uPrintsArea.x) / uPrintsArea.z, (uPrintsArea.y + uPrintsArea.w - vWPos.z) / uPrintsArea.w);
+        float pr = 0.0;
+        if (gSnow > 0.0 && all(greaterThan(puv, vec2(0.0))) && all(lessThan(puv, vec2(1.0)))) pr = texture2D(uPrints, puv).r;
         col = mix(col, vec3(0.93, 0.95, 0.98) * (0.94 + 0.06 * fine), gSnow);
+        col = mix(col, vec3(0.62, 0.68, 0.8), pr * gSnow * 0.7);
         diffuseColor.rgb = min(col, vec3(1.0));`,
       )
       .replace(
@@ -222,6 +260,10 @@ export function applyGroundFluid(mat: THREE.Material, stain: [number, number, nu
   u.uStain.value.set(...stain);
   u.uWets.value = wets ? 1 : 0;
   u.uRingRough.value = ringRough;
+}
+
+export function setGroundPrints(mat: THREE.Material, tex: THREE.Texture) {
+  mat.userData.uniforms.uPrints.value = tex;
 }
 
 /** Location pattern and colours. */
