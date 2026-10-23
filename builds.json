@@ -1,5 +1,10 @@
 [
   {
+    "sha": "5ed368f",
+    "message": "Quieter console: skip toNonIndexed on already non-indexed geometry",
+    "date": "2026-10-23T17:28:30.273Z"
+  },
+  {
     "sha": "4ad4bda",
     "message": "First-person skipping and fishing, RC boat, puddle size, engineering graphs",
     "date": "2026-10-23T17:05:55.308Z"
