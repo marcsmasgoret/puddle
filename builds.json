@@ -1,5 +1,10 @@
 [
   {
+    "sha": "bf99454",
+    "message": "Fix empty scene on first load; phone UI legibility",
+    "date": "2026-10-23T10:26:46.049Z"
+  },
+  {
     "sha": "180e4cc",
     "message": "Phases 7-9: animals, sound, engineering mode, validation, physics write-up",
     "date": "2026-10-23T10:15:37.560Z"
