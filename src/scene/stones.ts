@@ -7,10 +7,20 @@ import type { FluidProperties } from '../physics/fluids';
 import { LAYER_REFLECT } from '../render/pipeline';
 
 const MAX_STONES = 8;
-/** incidence of the throw: released ~4 cm above the water, heading down at
- *  18°, roughly a side-arm throw. With this the best tilt is ~20° */
-const RELEASE_HEIGHT = 0.04;
-const RELEASE_ANGLE = (18 * Math.PI) / 180;
+/** incidence of the throw: a crouched side-arm throw, released ~2 cm above
+ *  the water and skimming in at 7°. Shallow incidence gives the most skips
+ *  (Clanet et al. 2004); the best tilt is still ~20° */
+const RELEASE_HEIGHT = 0.02;
+const RELEASE_ANGLE = (7 * Math.PI) / 180;
+/**
+ * Total distance of a run of skips grows like v² (each hop is ~2 v_x v_z / g,
+ * and the hops shrink as the stone slows). Simulating the model above, a
+ * well-tilted stone covers about 0.1 v² metres (v in m/s) before it digs in,
+ * so the hardest throw is matched to the puddle: v_max = √(runway / 0.1). A
+ * perfect flick then skips all the way to the far shore instead of sailing
+ * off after two hops.
+ */
+const RUN_PER_V2 = 0.1;
 
 export interface Flick {
   /** screen-space flick vector in pixels (x right, y down) and duration [ms] */
@@ -62,7 +72,7 @@ export class Stones {
     // speed: a flick across ~2/3 of the screen in a fifth of a second is a
     // strong throw (~6 m/s); faster flicks also spin the stone harder
     const widthsPerSec = Math.hypot(f.dx, f.dy) / screenW / Math.max(f.ms / 1000, 0.04);
-    const speed = THREE.MathUtils.clamp(0.6 + widthsPerSec * 1.6, 0.6, 9);
+    let speed = THREE.MathUtils.clamp(0.6 + widthsPerSec * 1.6, 0.6, 9);
     const spinHz = THREE.MathUtils.clamp(2 + widthsPerSec * 3.5, 2, 22);
     // tilt: the angle of the flick above horizontal
     const tilt = THREE.MathUtils.clamp(Math.atan2(-f.dy, Math.abs(f.dx)), -0.1, 1.3);
@@ -86,7 +96,17 @@ export class Stones {
       const d = aim.dir.clone().setY(0).normalize();
       const p = aim.origin.clone().setY(0);
       for (let k = 0; k < 600 && !this.world.isFluid(p.x, p.z); k++) p.addScaledVector(d, 0.01);
-      pos = p.addScaledVector(d, 0.08 - run).setY(RELEASE_HEIGHT);
+      // touch down where the water is deep enough to skim (≥ 6 mm), not on
+      // the shelving edge, where the stone would just ground on the bed
+      p.addScaledVector(d, 0.08);
+      for (let k = 0; k < 60 && -this.world.floorAt(p.x, p.z) < 0.006 && this.world.isFluid(p.x, p.z); k++) p.addScaledVector(d, 0.01);
+      // the runway: open water ahead of the first touchdown
+      const q = p.clone();
+      for (let k = 0; k < 1200 && this.world.isFluid(q.x, q.z); k++) q.addScaledVector(d, 0.01);
+      const vMax = THREE.MathUtils.clamp(Math.sqrt(Math.max(q.distanceTo(p) - 0.1, 0.3) / RUN_PER_V2), 2.2, 9);
+      // a strong flick (2/3 of the screen in 0.2 s) is the hardest throw
+      speed = vMax * THREE.MathUtils.clamp(widthsPerSec / 3.2, 0.3, 1.1);
+      pos = p.addScaledVector(d, -run).setY(RELEASE_HEIGHT);
       vel = d.multiplyScalar(speed * Math.cos(RELEASE_ANGLE)).setY(-speed * Math.sin(RELEASE_ANGLE));
     }
     const stone = new Stone(pos, vel, Math.max(tilt, 0), spinHz * Math.PI * 2);

@@ -8,7 +8,7 @@ import { applyGroundLook, applyGroundSeason, type SeasonLook } from '../../rende
 import { Environment } from './environment';
 import { loaders, type LocationDef, type LocationId, type BuiltLocation } from './location';
 import { makeMood, type Season, type TimeOfDay, type Weather } from './palettes';
-import { sway, type Waters } from './props';
+import { sway, type Waters, type Trunk } from './props';
 import { WeatherSystem } from './weather';
 import { Leaves } from './leaves';
 import { Ice } from './ice';
@@ -128,6 +128,12 @@ export class World {
       });
       this.scene.add(this.built.group);
       this.clearPuddle(this.built.group);
+      // real trunks near the puddle, for the squirrels (not shrubs)
+      this.trunks = [];
+      this.built.group.traverse((o) => {
+        for (const t of (o.userData.trunks ?? []) as Trunk[]) if (t[3] >= 4 && Math.hypot(t[0], t[1]) < 15 && t[1] < 0) this.trunks.push(t);
+      });
+      this.critterKey = '';
     }
     this.def = def;
 
@@ -146,7 +152,9 @@ export class World {
         }
       }
       this.mouseCat.configure(spots, c.season === 'winter', walkable);
-      this.wildlife.configure(def.critters.habitat, c.season, c.time, walkable);
+      const habitat = { ...def.critters.habitat };
+      if (habitat.trees) habitat.trees = this.trunks.filter(([x, z]) => walkable(x, z)).length >= 2 ? this.trunks : undefined;
+      this.wildlife.configure(habitat, c.season, c.time, walkable);
       this.prints.clear(this.renderer);
     }
 
@@ -195,6 +203,7 @@ export class World {
     } else if (!on && this.ice.enabled) this.ice.disable();
   }
   private fluidId = 'water';
+  private trunks: Trunk[] = [];
   private critterKey = '';
 
   update(dt: number) {

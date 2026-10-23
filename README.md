@@ -23,14 +23,13 @@ Puddle is a browser toy built on a GPU solver for the shallow-water equations. W
 - **Change the fluid:** water, honey, mercury, oobleck, lava or red jello, each with measured properties. Oobleck goes solid when you hit it; lava glows under a cooling crust that tears where it moves; jello is an elastic gel that jiggles and springs back.
 - **Float toys:** a rubber duck, a paper boat, a sailboat and a beach donut, at their real sizes and masses. They ride the waves, get pushed along by them, and make their own.
 - **Skip stones** in first person with a side-arm swipe. About 20° of tilt is the magic angle.
-- **Fish** with a rod in your hands: cast, then watch the bobber. Nothing is ever caught.
+- **Fish** with the tip of a rod just in view: cast, then watch the bobber. Nothing is ever caught.
 - **Drive an RC boat** with the thumb stick or the arrow keys. Faster than the waves, it drags a V-shaped wake.
-- **Make the puddle bigger** (and deeper), or smaller.
-- **Pick a place:** forest, a PEI beach, a Mediterranean beach, a city street in Toronto, a backyard pool, a cottage dock, High Park, the Lions Gate Bridge, or an Algonquin canoe camp. Change the season, time of day and weather. Rain, gusts of wind, autumn leaves and winter ice all act on the water. At night there are stars, a moon and city lights.
+- **Choose the puddle size:** small (half the usual), normal, or large (twice the usual, and deeper).
+- **Pick a place:** forest, the PEI dunes, a sandy beach with palms, a city street in Toronto, a backyard pool, a cottage dock, High Park, the Lions Gate Bridge, or an Algonquin canoe camp. Change the season, time of day and weather. Rain, gusts of wind, autumn leaves and winter ice all act on the water. At night there are stars, a moon and city lights.
 - **Watch the wildlife:** sculpted, skinned animals with real gaits: robins, crows, gulls, geese, mallards, loons, squirrels, cottontails, a doe, a fox, leaping bass, and once in a while a tabby cat stalking a mouse.
-- **Listen:** generative music for each season (a cozy autumn, music-box carols in winter) and a nature soundscape for each place and time of day, all synthesised live. Music and nature have their own volume.
-- **Engineering mode** (in the settings panel):
-  - live graphs: the puddle's kinetic and potential energy, a space–time diagram of the waves against √(gh), a wave probe's spectrum, and the fluid's momentum;
+- **Listen:** generative music for each season (flute and birdlike trills in spring, guitar and hand drum in summer, a wistful minor autumn, music-box carols in winter) and a nature soundscape for each place and time of day: thrushes and wrens in the forest, loons across the lake at the cottage, gulls and breaking waves at the beaches. All synthesised live; music and nature have their own volume.
+- **Engineering mode** (in the settings panel; it switches to slapping):
   - overlays of surface height, velocity, vorticity, Froude number, strain rate and viscosity, and the forces on each toy;
   - live readouts of the solver, and sliders for every physical parameter, including gravity;
   - a choice of grid resolution.

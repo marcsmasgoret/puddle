@@ -1,7 +1,7 @@
-// The fishing rod in your hands: a cork grip and a reel just out of shot at
-// the bottom right, the rod rising into view toward the water, the tip
-// bending under the line's pull. It flicks back and forward when you cast
-// and dips when something nibbles.
+// The fishing rod in your hands: held from just outside the bottom-right
+// corner of the view, so only its last stretch shows, the tip bending under
+// the line's pull. It flicks back and forward when you cast and dips when
+// something nibbles.
 import * as THREE from 'three';
 
 const LEN = 1.9; // rod length [m]
@@ -65,11 +65,19 @@ export class Rod {
     this.dip = Math.min(1, this.dip + strength * 25);
   }
 
-  /** Hold the rod in front of the camera, bottom right; returns the tip. */
-  update(camera: THREE.Camera, dt: number) {
-    // the butt just below the bottom-right of the view, pointing out at the water
-    const butt = new THREE.Vector3(0.3, -0.36, -0.42).applyMatrix4(camera.matrixWorld);
-    const aim = new THREE.Vector3(-0.05, 0.05, -1.6).applyMatrix4(camera.matrixWorld);
+  /** Hold the rod from off-screen, bottom right; returns the tip. */
+  update(camera: THREE.PerspectiveCamera, dt: number) {
+    // the tip just inside the right edge, under a metre out; the rest of
+    // the rod runs off to the right to the hands, out of shot
+    const ty = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), tx = ty * camera.aspect;
+    const tipCam = new THREE.Vector3(0.62 * tx, -0.22 * ty, -1).multiplyScalar(0.75);
+    const buttCam = tipCam.clone().add(new THREE.Vector3(0.85, -0.22, 0.5).normalize().multiplyScalar(LEN));
+    const butt = buttCam.applyMatrix4(camera.matrixWorld);
+    const aim = tipCam.applyMatrix4(camera.matrixWorld);
+    // never through the ground
+    const lift = Math.max(0, 0.12 - aim.y);
+    butt.y += lift;
+    aim.y += lift;
     this.group.position.copy(butt);
     this.group.lookAt(aim);
     // cast: the rod sweeps back over the shoulder, then whips forward

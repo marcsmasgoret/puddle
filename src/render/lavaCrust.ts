@@ -1,14 +1,24 @@
 // The skin on a lava puddle. Exposed melt radiates and cools; within a few
-// seconds a dark, glassy crust grows over any surface that sits still
-// (pāhoehoe skins over fast). Wherever the melt moves or is stretched, the
-// crust tears and the glowing interior shows through.
+// seconds solid crust grows over a surface that sits still (pāhoehoe skins
+// over fast). The crust is rigid: it breaks into plates, and the plates ride
+// on the melt like rafts, carried by its flow. Wherever the melt is
+// stretched the plates pull apart and the glowing interior shows between
+// them, as on a lava lake.
 //
-// One value per simulation cell, 0 (bare, glowing) to 1 (fully crusted):
-//   growth   dc/dt = (c_eq − c) / t_crust
-//            c_eq < 1 over slow-drifting hot spots: convection in the pool
-//            brings fresh melt up and keeps reopening the skin there
-//   tearing  dc/dt = −c · (|u| / 0.02 m/s + |S| / 2 s⁻¹)
-// with u the depth-averaged velocity and |S| the strain rate from the solver.
+// Per simulation cell:
+//   R   crust cover, 0 (bare, glowing melt) to 1 (closed crust)
+//   GB  material coordinates [m]: where this bit of surface started. They
+//       are carried with the flow, so the plate pattern drawn on them
+//       (water.ts) moves with the melt instead of sitting still on screen
+//
+//   advection  both are moved semi-Lagrangian with the depth-averaged
+//              velocity u
+//   growth     dc/dt = (c_eq − c) / t_crust; c_eq ≈ 0.65 at rest (convection
+//              keeps the plates from welding shut) and lower over slow-
+//              drifting hot spots where fresh melt wells up
+//   tearing    dc/dt = −c · (|S| / 1.5 s⁻¹ + |u| / 0.08 m/s)
+// with |S| the strain rate. Where the melt lies bare, the coordinates are
+// reset to the cell's own position, so new crust forms new plates.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import type { ShallowWaterSolver } from '../physics/solver';
@@ -58,15 +68,25 @@ export class LavaCrust {
           vec2 vel = 0.5 * vec2(s.g + S(c + ivec2(1, 0)).g, s.b + S(c + ivec2(0, 1)).b);
           float ux = (S(c + ivec2(1, 0)).g - s.g) / uDx;
           float vz = (S(c + ivec2(0, 1)).b - s.b) / uDx;
-          float strain = sqrt(2.0 * ux * ux + 2.0 * vz * vz);
-          float crust = uReset > 0.5 ? 0.75 + 0.2 * hash(vec2(c)) : texelFetch(uPrev, c, 0).r;
+          float uz = 0.5 * ((S(c + ivec2(0, 1)).g - S(c - ivec2(0, 1)).g) + (S(c + ivec2(1, 1)).g - S(c + ivec2(1, -1)).g)) / (2.0 * uDx);
+          float vx = 0.5 * ((S(c + ivec2(1, 0)).b - S(c - ivec2(1, 0)).b) + (S(c + ivec2(1, 1)).b - S(c + ivec2(-1, 1)).b)) / (2.0 * uDx);
+          float strain = sqrt(2.0 * ux * ux + 2.0 * vz * vz + (uz + vx) * (uz + vx));
+          vec2 size = vec2(textureSize(uState, 0));
+          vec2 p = (vec2(c) + 0.5) * uDx;
+          // carried with the flow: look up where this surface was a step ago
+          vec2 back = (vec2(c) + 0.5 - vel * uDt / uDx) / size;
+          vec4 prev = texture(uPrev, back);
+          float crust = uReset > 0.5 ? 0.6 + 0.3 * hash(vec2(c)) : prev.r;
+          vec2 m = uReset > 0.5 ? p : prev.gb;
           // upwelling hot spots drift slowly across the pool
-          vec2 p = vec2(c) * uDx;
           float up = vnoise(p * 3.0 + vec2(uTime * 0.04, uTime * 0.025)) * 0.65 + vnoise(p * 7.0 - uTime * 0.06) * 0.35;
-          float eq = 0.97 - 0.85 * smoothstep(0.45, 0.85, up);
+          float eq = 0.64 - 0.55 * smoothstep(0.45, 0.85, up);
           crust += uDt * (eq - crust) / uT;
-          crust -= uDt * crust * (length(vel) / 0.02 + strain / 2.0);
-          gl_FragColor = vec4(clamp(crust, 0.0, 1.0), 0.0, 0.0, 1.0);
+          crust -= uDt * crust * (strain / 1.5 + length(vel) / 0.08);
+          crust = clamp(crust, 0.0, 1.0);
+          // bare melt: fresh surface, fresh coordinates
+          m = mix(m, p, smoothstep(0.06, 0.0, crust));
+          gl_FragColor = vec4(crust, m, 1.0);
         }`,
       depthTest: false,
       depthWrite: false,

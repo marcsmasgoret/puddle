@@ -14,8 +14,11 @@ import type { Season, TimeOfDay } from '../world/palettes';
 
 export interface Habitat {
   birds: ('songbirds' | 'gulls' | 'geese' | 'ducks' | 'crows')[];
-  /** squirrel trees [x, z] */
-  trees?: [number, number][];
+  /**
+   * squirrel trees [x, z]; the world swaps these for the real trunks it
+   * built ([x, z, radius, height]) so a squirrel climbs an actual tree
+   */
+  trees?: ([number, number] | [number, number, number, number])[];
   rabbits?: [number, number, number, number]; // lawn rectangle x0, z0, x1, z1
   deer?: boolean;
   fox?: boolean;
@@ -300,7 +303,7 @@ export class Wildlife {
   }
 
   // ── small mammals ─────────────────────────────────────────────────────────
-  private squirrel(all: [number, number][]): Actor | null {
+  private squirrel(all: NonNullable<Habitat['trees']>): Actor | null {
     // only trees on land, and a run between them that stays on land
     const trees = all.filter(([x, z]) => this.walkable(x, z));
     if (trees.length < 2) return null;
@@ -311,8 +314,20 @@ export class Wildlife {
       const t = k / 20;
       if (!this.walkable(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return null;
     }
-    const p = new THREE.Vector3(a[0], 0, a[1]);
-    const goal = new THREE.Vector3(b[0], 0, b[1]);
+    // it climbs the side of the trunk facing the puddle and the viewer, so
+    // the crown's leaves and branches hide it as it goes up into them
+    const trunkR = b[2] ?? 0.12, treeH = b[3] ?? 6;
+    const out = new THREE.Vector3(-b[0], 0, 3 - b[1]).normalize();
+    const at = (y: number) => {
+      const r = trunkR * (1 - 0.3 * Math.min(1, y / (0.4 * treeH))) + 0.03;
+      return new THREE.Vector3(b[0] + out.x * r, y, b[1] + out.z * r);
+    };
+    const p = new THREE.Vector3(a[0], 0, a[1]).addScaledVector(out, (a[2] ?? 0.12) + 0.1);
+    const goal = at(0);
+    // belly to the bark, head up: local +x up, local +y (its back) outward
+    const climbPose = new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), out, new THREE.Vector3(0, 1, 0).cross(out)),
+    );
     const s = this.spec('squirrel');
     const q = new Quadruped(sculpt(s), s, { cadence: 3.2, cadenceGain: 1.5, height: 0.07, tailCurve: 0.45 });
     q.pos.copy(p);
@@ -326,13 +341,15 @@ export class Wildlife {
       update: (dt) => {
         age += dt;
         const to = goal.clone().sub(q.pos);
-        if (climb >= 0 || to.length() < 0.15) {
-          // up the trunk and gone
+        to.y = 0;
+        if (climb >= 0 || to.length() < 0.12) {
+          // up the trunk in scurries, and gone into the crown
           climb = Math.max(climb, 0) + dt;
           q.targetSpeed = 0;
-          q.root.position.set(goal.x - 0.12, climb * 1.4, goal.z);
-          q.root.rotation.set(0, 0, Math.PI / 2);
-          return climb < 2.5;
+          const y = 0.08 + climb * 1.1 - 0.12 * Math.max(0, Math.sin(climb * 9));
+          q.root.position.copy(at(y));
+          q.root.quaternion.copy(climbPose);
+          return y < 0.5 * treeH;
         }
         if (pause > 0) {
           pause -= dt;

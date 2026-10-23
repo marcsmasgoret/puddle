@@ -3,7 +3,8 @@
 // village, umbrella pines and cypresses, and a sailboat out at sea.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { rng, reflective, tint } from '../props';
+import { rng, reflective, tint, swayMaterial } from '../props';
+import { NOISE as NOISE_GLSL } from '../../../render/glsl';
 
 /** a dune field: smooth mounds as a height field, h(x, z) [m] */
 export function duneHeight(mounds: [number, number, number, number, number][]) {
@@ -279,4 +280,348 @@ export function sailboat(scale: number) {
   g.add(hull, sm);
   g.scale.setScalar(scale);
   return reflective(g);
+}
+
+/**
+ * Surf along a straight stretch of shore: lines of broken white water
+ * rolling in, breaking up along their length, and the swash sheet sliding
+ * up the sand and back with a lacy foam edge. The shore runs through `at`
+ * along x turned by `angle` (radians about y); the sea is on its −z side.
+ */
+export function surf(o: { at: [number, number]; angle?: number; width: number; sea: string; period?: number; zone?: number }, time: THREE.IUniform<number>) {
+  const zone = o.zone ?? 9;
+  const geo = new THREE.PlaneGeometry(o.width, zone + 4, Math.ceil(o.width / 4), 24);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, 0, -zone / 2 + 2);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: true,
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.fog,
+      { uShore: { value: 0 }, uZone: { value: zone }, uPeriod: { value: o.period ?? 7 }, uSea: { value: new THREE.Color(o.sea) } },
+    ]),
+    vertexShader: /* glsl */ `
+      #include <fog_pars_vertex>
+      varying vec3 vW;
+      void main() {
+        vW = position; // along-shore x, seaward −z
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      #include <fog_pars_fragment>
+      uniform float uTime, uShore, uZone, uPeriod;
+      uniform vec3 uSea;
+      varying vec3 vW;
+      ${NOISE_GLSL}
+      void main() {
+        float d = uShore - vW.z; // metres seaward of the mean waterline
+        float x = vW.x;
+        float fw = fwidth(d) + 1e-3;
+        // swash: each wave's run-up slides up the beach and drains back
+        float cyc = fract(uTime / uPeriod);
+        float run = 1.6 * sin(3.14159 * min(cyc * 1.6, 1.0)) - 0.4;
+        float edge = -run + 0.25 * (vnoise(vec2(x * 0.7, uTime * 0.2)) - 0.5);
+        float sheet = smoothstep(edge - fw, edge + fw * 2.0, d) * (1.0 - smoothstep(0.0, 1.5, d - 1.0));
+        float lace = smoothstep(0.35, 0.0, abs(d - edge) / 0.35) * (0.5 + 0.5 * vnoise(vec2(x * 5.0, d * 7.0 + uTime)));
+        // broken waves rolling in: crests every uZone/3 m, fading near the sand
+        float lam = uZone / 3.0;
+        float ph = d / lam + cyc * 1.0;
+        float crest = fract(ph);
+        float k = floor(ph);
+        float band = smoothstep(0.0, 0.02 + fw / lam, crest) * (1.0 - smoothstep(0.02, 0.16, crest));
+        float breakup = smoothstep(0.35, 0.7, vnoise(vec2(x * 0.12 + k * 7.3, k * 1.7)) + 0.25 * vnoise(vec2(x * 1.3, k)));
+        float trail = (1.0 - smoothstep(0.0, 0.45, crest)) * 0.35 * vnoise(vec2(x * 2.0, ph * 9.0));
+        float zone = smoothstep(uZone, uZone * 0.6, d) * smoothstep(-0.3, 0.6, d);
+        float foam = max(band, trail) * breakup * zone + lace * 0.9;
+        vec3 water = mix(uSea, vec3(1.0), 0.15);
+        vec3 col = mix(water, vec3(0.97, 0.98, 1.0), clamp(foam, 0.0, 1.0));
+        float a = clamp(foam * 0.95 + sheet * 0.45, 0.0, 0.95);
+        if (a < 0.01) discard;
+        gl_FragColor = vec4(col, a);
+        #include <fog_fragment>
+      }`,
+  });
+  mat.uniforms.uTime = time;
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(o.at[0], 0.03, o.at[1]);
+  m.rotation.y = o.angle ?? 0;
+  m.renderOrder = 2;
+  return m;
+}
+
+/**
+ * A coconut palm: a slender ringed trunk curving up and leaning out, a crown
+ * of a dozen arching fronds, each a midrib with drooping leaflets, and a few
+ * coconuts. Fronds sway in the wind.
+ */
+export function palm(h: number, lean: number, seed: number) {
+  const r = rng(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  // trunk: a curve leaning out and back up, ringed with leaf scars
+  const pts: THREE.Vector3[] = [];
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    pts.push(new THREE.Vector3(lean * h * (t * 0.9 - 0.35 * t * t), h * t, 0));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const trunk = new THREE.TubeGeometry(curve, 40, h * 0.022, 9, false);
+  const tp = trunk.attributes.position as THREE.BufferAttribute;
+  const tc = new Float32Array(tp.count * 3);
+  const bark = new THREE.Color('#8a7356'), scar = new THREE.Color('#6b5640');
+  for (let k = 0; k < tp.count; k++) {
+    const y = tp.getY(k);
+    const t = y / h;
+    // thicker at the foot, and a ring every ~12 cm
+    const ring = 0.5 + 0.5 * Math.sin((y / 0.12) * Math.PI * 2);
+    const c = curve.getPoint(Math.min(1, Math.max(0, t)));
+    const s = 1 + 0.6 * Math.pow(1 - t, 4) + 0.06 * ring;
+    tp.setX(k, c.x + (tp.getX(k) - c.x) * s);
+    tp.setZ(k, c.z + (tp.getZ(k) - c.z) * s);
+    bark.clone().lerp(scar, ring * 0.6).multiplyScalar(0.85 + 0.15 * t).toArray(tc, k * 3);
+  }
+  trunk.setAttribute('color', new THREE.BufferAttribute(tc, 3));
+  trunk.deleteAttribute('uv');
+  parts.push(trunk.toNonIndexed());
+  const top = curve.getPoint(1);
+  // fronds
+  const dark = new THREE.Color('#3f6b2a'), light = new THREE.Color('#7aa548'), dry = new THREE.Color('#a8955a');
+  const nF = 13;
+  for (let f = 0; f < nF; f++) {
+    const az = (f / nF) * Math.PI * 2 + r() * 0.3;
+    const len = h * (0.32 + r() * 0.1);
+    const up = 0.5 + r() * 0.5; // initial rise
+    const old = f % 5 === 0;
+    const pos: number[] = [], col: number[] = [];
+    const dir = new THREE.Vector3(Math.cos(az), 0, Math.sin(az));
+    const side = new THREE.Vector3(-dir.z, 0, dir.x);
+    const N = 18;
+    const rib = (t: number) =>
+      top.clone().addScaledVector(dir, len * t).add(new THREE.Vector3(0, len * (up * t - (old ? 1.3 : 0.9) * t * t), 0));
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N;
+      const a = rib(t0), b = rib(t1);
+      const w = len * 0.2 * Math.sin(Math.PI * Math.min(1, t0 * 1.15 + 0.05));
+      const droop = new THREE.Vector3(0, -w * 0.7, 0);
+      const c0 = (old ? dry : dark).clone().lerp(old ? dry : light, t0 * 0.8 + r() * 0.15);
+      for (const sgn of [-1, 1]) {
+        // a leaflet: from the midrib out and down
+        const tip = a.clone().addScaledVector(side, sgn * w).add(droop).addScaledVector(dir, len * 0.04);
+        const tri = [a, b, tip];
+        for (const v of tri) pos.push(v.x, v.y, v.z);
+        for (let q = 0; q < 3; q++) col.push(c0.r * (q === 2 ? 1.15 : 0.9), c0.g * (q === 2 ? 1.15 : 0.9), c0.b);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    parts.push(g);
+  }
+  // coconuts
+  for (let k = 0; k < 4; k++) {
+    const nut = new THREE.SphereGeometry(h * 0.018, 8, 6);
+    const a = r() * Math.PI * 2;
+    nut.translate(top.x + Math.cos(a) * h * 0.025, top.y - h * 0.025, top.z + Math.sin(a) * h * 0.025);
+    parts.push(tint(nut, '#5a4a2a'));
+  }
+  const m = new THREE.Mesh(
+    mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p))),
+    swayMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide })),
+  );
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return reflective(m);
+}
+
+/**
+ * A sandstone cliff along a line of points (the foot of the cliff, the sea
+ * on the left as you walk the line): horizontal strata weathered into
+ * ledges and overhangs, cut by gullies, darker and damp near the foot, with
+ * a turf cap that lips over the edge and the grassy land running back from
+ * the top. height(t) gives the height along the line, t = 0…1.
+ */
+export function cliffLine(o: {
+  points: [number, number][];
+  height: (t: number) => number;
+  rock: string;
+  band: string;
+  pale: string;
+  grass: string;
+  seed: number;
+}) {
+  const r = rng(o.seed);
+  const ph = Array.from({ length: 8 }, () => r() * 10);
+  const curve = new THREE.CatmullRomCurve3(o.points.map(([x, z]) => new THREE.Vector3(x, 0, z)));
+  const len = curve.getLength();
+  const NU = Math.ceil(len / 0.8), NV = 40;
+  const rock = new THREE.Color(o.rock), band = new THREE.Color(o.band), pale = new THREE.Color(o.pale), grass = new THREE.Color(o.grass);
+  const c = new THREE.Color();
+  const grid: THREE.Vector3[][] = [];
+  const cols: THREE.Color[][] = [];
+  const inland: THREE.Vector3[] = [];
+  for (let i = 0; i <= NU; i++) {
+    const t = i / NU;
+    const P = curve.getPointAt(t);
+    const T = curve.getTangentAt(t);
+    const N = new THREE.Vector3(T.z, 0, -T.x); // seaward (left of the walk)
+    inland.push(N.clone().multiplyScalar(-400));
+    const s = t * len;
+    const H = o.height(t);
+    // gullies and buttresses along the face
+    const gully = 0.5 + 0.5 * Math.sin(s * 0.42 + ph[0]) * Math.sin(s * 0.17 + ph[1]);
+    const row: THREE.Vector3[] = [], crow: THREE.Color[] = [];
+    for (let j = 0; j <= NV; j++) {
+      const v = j / NV;
+      const y = v * H;
+      // the face leans back; harder strata stand out as ledges
+      const strata = Math.sin(y * 2.4 + Math.sin(s * 0.08 + ph[2]) * 1.2);
+      const ledge = 0.25 * Math.max(0, strata) ** 3;
+      let out = -0.22 * y - 2.2 * gully + ledge + 0.35 * Math.sin(s * 1.3 + y * 0.7 + ph[3]) + 0.15 * Math.sin(s * 3.1 + ph[4]);
+      // the turf lips over the edge
+      if (j === NV) out -= 0.15;
+      const p = P.clone().addScaledVector(N, out);
+      p.y = y + (j === NV ? 0.15 : 0);
+      row.push(p);
+      // red rock with paler and deeper bands, dark in the gullies, damp at
+      // the foot, turf on top
+      const b = 0.5 + 0.5 * Math.sin(y * 3.3 + Math.sin(s * 0.11) * 0.9 + ph[5]);
+      c.copy(rock).lerp(band, b * 0.55);
+      if (Math.sin(y * 1.1 + ph[6]) > 0.8) c.lerp(pale, 0.5);
+      c.multiplyScalar(0.78 + 0.28 * (1 - gully) + 0.08 * Math.sin(s * 2.3 + y * 5));
+      if (y < 0.7) c.multiplyScalar(0.7 + 0.3 * (y / 0.7));
+      if (j >= NV - 1) c.copy(grass).multiplyScalar(0.9 + 0.2 * r());
+      crow.push(c.clone());
+    }
+    grid.push(row);
+    cols.push(crow);
+  }
+  const pos: number[] = [], col: number[] = [];
+  for (let i = 0; i < NU; i++)
+    for (let j = 0; j < NV; j++)
+      for (const [a, b] of [[i, j], [i + 1, j], [i + 1, j + 1], [i, j], [i + 1, j + 1], [i, j + 1]]) {
+        const p = grid[a][b], cc = cols[a][b];
+        pos.push(p.x, p.y, p.z);
+        col.push(cc.r, cc.g, cc.b);
+      }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
+  m.castShadow = m.receiveShadow = true;
+  // the grassy land on top, running inland
+  const top: number[] = [];
+  for (let i = 0; i < NU; i++) {
+    const a = grid[i][NV], b = grid[i + 1][NV];
+    const a2 = a.clone().add(inland[i]), b2 = b.clone().add(inland[i + 1]);
+    top.push(a.x, a.y, a.z, b2.x, b2.y, b2.z, b.x, b.y, b.z, a.x, a.y, a.z, a2.x, a2.y, a2.z, b2.x, b2.y, b2.z);
+  }
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute('position', new THREE.Float32BufferAttribute(top, 3));
+  tg.computeVertexNormals();
+  const land = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ color: o.grass, roughness: 1, side: THREE.DoubleSide }));
+  land.receiveShadow = true;
+  const group = new THREE.Group();
+  group.add(m, land);
+  return reflective(group);
+}
+
+/** A sea stack: a pillar of the same sandstone standing in the shallows, turf on top. */
+export function seaStack(h: number, w: number, rock: string, band: string, grass: string, seed: number) {
+  const r = rng(seed);
+  let g: THREE.BufferGeometry = new THREE.CylinderGeometry(w * 0.42, w * 0.55, h, 9, 14);
+  g.translate(0, h / 2, 0);
+  g = g.toNonIndexed();
+  const p = g.attributes.position as THREE.BufferAttribute;
+  const col = new Float32Array(p.count * 3);
+  const a = new THREE.Color(rock), b = new THREE.Color(band), gr = new THREE.Color(grass);
+  const ph = r() * 10;
+  for (let k = 0; k < p.count; k++) {
+    const x = p.getX(k), y = p.getY(k), z = p.getZ(k);
+    const ang = Math.atan2(z, x);
+    const s = 1 + 0.18 * Math.sin(ang * 3 + ph) + 0.1 * Math.sin(y * 2.4 + ang * 2) - (y < 0.8 ? 0.15 * (1 - y / 0.8) : 0);
+    p.setX(k, x * s);
+    p.setZ(k, z * s);
+    const c = a.clone().lerp(b, 0.5 + 0.5 * Math.sin(y * 3.3 + ph));
+    (y > h - 0.25 ? gr : c).toArray(col, k * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.deleteAttribute('uv');
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  m.castShadow = m.receiveShadow = true;
+  return reflective(m);
+}
+
+/**
+ * A Maritime lighthouse: a white octagonal tower tapering up, a red gallery
+ * with railing posts, the glazed lantern room and red cap, and the keeper's
+ * house beside it. At night the lamp glows and its beam sweeps the bay.
+ */
+export function lighthouse2(height: number, night: number) {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: '#f3f1ea', roughness: 0.75 });
+  const red = new THREE.MeshStandardMaterial({ color: '#b3231c', roughness: 0.55 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#2b2f33', roughness: 0.4 });
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(height * 0.1, height * 0.16, height, 8), white);
+  tower.position.y = height / 2;
+  for (let k = 0; k < 3; k++) {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(height * 0.05, height * 0.07, height * 0.02), dark);
+    const y = height * (0.3 + 0.22 * k);
+    w.position.set(0, y, height * (0.16 - 0.06 * (y / height)) + 0.01);
+    g.add(w);
+  }
+  const gallery = new THREE.Mesh(new THREE.CylinderGeometry(height * 0.17, height * 0.15, height * 0.04, 8), red);
+  gallery.position.y = height * 1.02;
+  const lantern = new THREE.Mesh(
+    new THREE.CylinderGeometry(height * 0.085, height * 0.085, height * 0.15, 8),
+    new THREE.MeshStandardMaterial({ color: '#3a3f44', emissive: new THREE.Color('#ffe2a0'), emissiveIntensity: 0.25 + night * 6, roughness: 0.15, metalness: 0.3 }),
+  );
+  lantern.position.y = height * 1.115;
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(height * 0.11, height * 0.1, 8), red);
+  cap.position.y = height * 1.24;
+  const vent = new THREE.Mesh(new THREE.SphereGeometry(height * 0.025, 8, 6), red);
+  vent.position.y = height * 1.3;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(height * 0.008, height * 0.05, height * 0.008), dark);
+    post.position.set(Math.cos(a) * height * 0.165, height * 1.065, Math.sin(a) * height * 0.165);
+    g.add(post);
+  }
+  // the keeper's house: white clapboard, red roof
+  const body = new THREE.Mesh(new THREE.BoxGeometry(height * 0.55, height * 0.28, height * 0.38), white);
+  body.position.set(height * 0.5, height * 0.14, height * 0.15);
+  const roofGeo = new THREE.BufferGeometry();
+  const W = height * 0.3, D = height * 0.21, R = height * 0.16;
+  roofGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+    -W, 0, -D, W, 0, -D, W, R, 0, -W, 0, -D, W, R, 0, -W, R, 0,
+    -W, 0, D, -W, R, 0, W, R, 0, -W, 0, D, W, R, 0, W, 0, D,
+    -W, 0, -D, -W, R, 0, -W, 0, D, W, 0, -D, W, 0, D, W, R, 0,
+  ], 3));
+  roofGeo.computeVertexNormals();
+  const roof = new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: '#b3231c', roughness: 0.55, side: THREE.DoubleSide }));
+  roof.position.set(height * 0.5, height * 0.28, height * 0.15);
+  for (const o of [tower, gallery, cap, body, roof]) o.castShadow = true;
+  g.add(tower, gallery, lantern, cap, vent, body, roof);
+  let beam: THREE.Mesh | null = null;
+  if (night > 0) {
+    const geo = new THREE.ConeGeometry(height * 0.6, height * 9, 24, 1, true);
+    geo.translate(0, -height * 4.5, 0);
+    geo.rotateZ(Math.PI / 2);
+    beam = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe6b0').multiplyScalar(0.25 * night), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
+    );
+    beam.position.y = height * 1.115;
+    g.add(beam);
+  }
+  return {
+    group: reflective(g),
+    update(t: number) {
+      if (beam) beam.rotation.y = t * 0.6;
+    },
+  };
 }

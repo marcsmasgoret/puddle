@@ -3,6 +3,7 @@
 import type { FluidId } from '../physics/fluids';
 import type { LocationId } from '../scene/world/location';
 import type { Season, TimeOfDay, Weather } from '../scene/world/palettes';
+import type { PuddleSize } from '../physics/grid';
 
 const KEY = 'puddle.settings.v1';
 
@@ -21,7 +22,7 @@ export interface Settings {
   volume: number;
   musicVolume: number;
   muted: boolean;
-  size: 'small' | 'normal' | 'large' | 'huge';
+  size: PuddleSize;
 }
 
 const defaults: Settings = {
@@ -42,7 +43,9 @@ const defaults: Settings = {
 
 function load(): Settings {
   try {
-    return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    const s: Settings = { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
+    if ((s.size as string) === 'huge') s.size = 'large'; // the old biggest size
+    return s;
   } catch {
     return { ...defaults };
   }

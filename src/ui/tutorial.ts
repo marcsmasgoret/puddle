@@ -3,6 +3,7 @@
 // opened it once. It opens a card with a looping gesture demo and two or
 // three short lines.
 import { settings, saveSettings } from './settings';
+import { registerCard } from './cards';
 
 export type TutorialMode = 'skip' | 'fish' | 'boat';
 
@@ -47,6 +48,12 @@ export function createTutorial() {
   card.className = 'ui-help-card';
   document.body.append(btn, tag, card);
   let mode: TutorialMode | null = null;
+  const isOpen = () => card.classList.contains('open');
+  const close = () => {
+    card.classList.remove('open');
+    one.sync();
+  };
+  const one = registerCard({ isOpen, close });
   const seen = (m: string) => (settings.hintsSeen ?? []).includes('help-' + m);
 
   const show = (m: TutorialMode | null) => {
@@ -55,7 +62,7 @@ export function createTutorial() {
     const fresh = !!m && !seen(m);
     btn.classList.toggle('pulse', fresh);
     tag.classList.toggle('show', fresh);
-    card.classList.remove('open');
+    close();
   };
   const open = () => {
     if (!mode) return;
@@ -69,8 +76,10 @@ export function createTutorial() {
       </svg>
       ${l.lines.map((s) => `<p>${s}</p>`).join('')}
       <button class="ui-chip ui-action ui-help-ok">Got it</button>`;
+    one.opening();
     card.classList.add('open');
-    card.querySelector('.ui-help-ok')!.addEventListener('click', () => card.classList.remove('open'));
+    one.sync();
+    card.querySelector('.ui-help-ok')!.addEventListener('click', close);
     if (!seen(mode)) {
       settings.hintsSeen = [...(settings.hintsSeen ?? []), 'help-' + mode];
       saveSettings();
@@ -78,6 +87,6 @@ export function createTutorial() {
     btn.classList.remove('pulse');
     tag.classList.remove('show');
   };
-  btn.addEventListener('click', () => (card.classList.contains('open') ? card.classList.remove('open') : open()));
-  return { show, isOpen: () => card.classList.contains('open'), close: () => card.classList.remove('open') };
+  btn.addEventListener('click', () => (isOpen() ? close() : open()));
+  return { show, isOpen, close };
 }

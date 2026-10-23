@@ -1,10 +1,34 @@
 // Backyard pool: the puddle is a small tiled pool set into a paver deck,
-// with a fence, the corner of the house, shrubs and a lawn chair. In winter
-// it becomes a steaming hot tub: warm underwater light, rising steam, jets
-// bubbling up, and snow all around.
+// with a cedar fence and a hedge along it, string lights, the corner of the
+// house in lap siding, a patio umbrella and table, loungers, potted plants,
+// a pool ladder and trees over the fence. In winter it becomes a steaming
+// hot tub: warm underwater light, rising steam, jets bubbling up, and snow
+// all around.
 import * as THREE from 'three';
 import type { LocationDef } from '../location';
-import { broadleaves, rng, reflective, conifers } from '../props';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { broadleaves, rng, reflective, conifers, tint } from '../props';
+
+/** painted lap siding: horizontal boards with a shadow line under each */
+function siding(color: string) {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSidingW;')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvSidingW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSidingW;')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        float board = fract(vSidingW.y / 0.18);
+        diffuseColor.rgb *= 0.82 + 0.18 * smoothstep(0.0, 0.25, board);`,
+      );
+  };
+  m.customProgramCacheKey = () => 'siding';
+  return m;
+}
 
 const def: LocationDef = {
   id: 'backyard',
@@ -24,15 +48,17 @@ const def: LocationDef = {
     const r = rng(31);
     // coping stones around the pool edge
     const coping = new THREE.MeshStandardMaterial({ color: '#e6ddcc', roughness: 0.8 });
+    // the pool grows with the puddle size setting
+    const S = ctx.halfX / 0.95;
     const shape = new THREE.Shape();
-    const hw = 0.95 + 0.12, hd = 0.62 + 0.12, cr = 0.32;
+    const hw = 0.95 * S + 0.12, hd = 0.62 * S + 0.12, cr = 0.22 * S + 0.1;
     shape.moveTo(-hw + cr, -hd);
     shape.lineTo(hw - cr, -hd); shape.quadraticCurveTo(hw, -hd, hw, -hd + cr);
     shape.lineTo(hw, hd - cr); shape.quadraticCurveTo(hw, hd, hw - cr, hd);
     shape.lineTo(-hw + cr, hd); shape.quadraticCurveTo(-hw, hd, -hw, hd - cr);
     shape.lineTo(-hw, -hd + cr); shape.quadraticCurveTo(-hw, -hd, -hw + cr, -hd);
     const hole = new THREE.Path();
-    const iw = 0.95, id = 0.62, ir = 0.22;
+    const iw = 0.95 * S, id = 0.62 * S, ir = 0.22 * S;
     hole.moveTo(-iw + ir, -id);
     hole.lineTo(iw - ir, -id); hole.quadraticCurveTo(iw, -id, iw, -id + ir);
     hole.lineTo(iw, id - ir); hole.quadraticCurveTo(iw, id, iw - ir, id);
@@ -53,9 +79,51 @@ const def: LocationDef = {
     }
     const rail = new THREE.Mesh(new THREE.BoxGeometry(28, 0.08, 0.05), wood);
     rail.position.set(0, 1.6, -5.17);
-    g.add(rail);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(28, 0.04, 0.12), wood);
+    cap.position.set(0, 1.86, -5.2);
+    g.add(rail, reflective(cap));
+    for (let x = -12; x <= 12; x += 2.4) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.95, 0.1), wood);
+      post.position.set(x, 0.97, -5.15);
+      post.castShadow = true;
+      g.add(reflective(post));
+    }
+    // a clipped hedge along the foot of the fence (bare and grey in winter),
+    // with a gap where the mouse gets under
+    {
+      const parts: THREE.BufferGeometry[] = [];
+      const leaf = hot ? '#6d6a5c' : season === 'autumn' ? '#7d7a3a' : '#3f6a34';
+      for (let x = -11; x < 11; x += 0.45) {
+        if (x > -3.4 && x < 2.6) continue;
+        let b: THREE.BufferGeometry = new THREE.IcosahedronGeometry(0.42 + r() * 0.12, 1);
+        b.scale(1.2, 1.0 + r() * 0.3, 0.8);
+        b.translate(x, 0.45, -4.75);
+        b = tint(b, new THREE.Color(leaf).multiplyScalar(0.85 + 0.3 * r()));
+        parts.push(b);
+      }
+      const hedge = new THREE.Mesh(mergeGeometries(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }));
+      hedge.castShadow = hedge.receiveShadow = true;
+      g.add(reflective(hedge));
+    }
+    // string lights swagged along the fence top, glowing in the evening
+    {
+      const wire: number[] = [];
+      const sag = (x: number) => 2.25 - 0.35 * Math.sin(Math.PI * (((x + 9) % 3) / 3));
+      for (let x = -9; x < 9; x += 0.05) wire.push(x, sag(x), -5.05);
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
+      g.add(new THREE.Line(wg, new THREE.LineBasicMaterial({ color: '#2a2a2a' })));
+      const glow = Math.max(mood.night, mood.sunElevation < 0.12 ? 0.5 : 0);
+      const bm = new THREE.MeshStandardMaterial({ color: '#fff3d6', emissive: new THREE.Color('#ffc46b'), emissiveIntensity: 0.2 + glow * 5 });
+      const bulb = new THREE.SphereGeometry(0.035, 8, 6);
+      for (let x = -8.7; x < 9; x += 0.6) {
+        const b = new THREE.Mesh(bulb, bm);
+        b.position.set(x, sag(x) - 0.05, -5.05);
+        g.add(b);
+      }
+    }
     // corner of the house on the left
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 6), new THREE.MeshStandardMaterial({ color: '#c8b8a4', roughness: 0.95 }));
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(6, 5, 6), siding(hot ? '#bfb4a6' : '#c8b8a4'));
     wall.position.set(-7.6, 2.5, -2.2);
     wall.castShadow = wall.receiveShadow = true;
     const win = new THREE.Mesh(
@@ -65,27 +133,102 @@ const def: LocationDef = {
     win.position.set(-4.59, 1.6, -1.5);
     win.rotation.y = Math.PI / 2;
     g.add(reflective(wall), reflective(win));
+    // window trim and muntin, the back door, the eaves
+    const white = new THREE.MeshStandardMaterial({ color: '#f2efe8', roughness: 0.6 });
+    for (const [w, h, y, z] of [[1.6, 0.08, 2.19, -1.5], [1.7, 0.1, 1.0, -1.5], [0.08, 1.2, 1.6, -2.24], [0.08, 1.2, 1.6, -0.76], [0.05, 1.1, 1.6, -1.5]]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.06, h, w), white);
+      t.position.set(-4.57, y, z);
+      g.add(reflective(t));
+    }
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.05, 0.95), new THREE.MeshStandardMaterial({ color: '#3c5a6e', roughness: 0.6 }));
+    door.position.set(-4.58, 1.03, 0.4);
+    const eave = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 6.4), white);
+    eave.position.set(-4.4, 5.0, -2.2);
+    g.add(reflective(door), reflective(eave));
     // shrubs and a tree over the fence
     g.add(broadleaves([[-3.5, -4.6, 2.2], [3.8, -4.7, 2.5], [6.5, -6.5, 7.5], [-1.5, -7.5, 8]], season, 31));
     g.add(conifers([[8.5, -6.4, 6], [-12, -8, 9], [12, -9, 10]], season, 4));
-    // a lawn chair beside the pool
-    const plastic = new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.5 });
-    const chair = new THREE.Group();
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5), plastic);
-    seat.position.y = 0.38;
-    const backrest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.55, 0.05), plastic);
-    backrest.position.set(0, 0.65, -0.24);
-    backrest.rotation.x = -0.25;
-    chair.add(seat, backrest);
-    for (const [lx, lz] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22]]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.38, 6), plastic);
-      leg.position.set(lx, 0.19, lz);
-      chair.add(leg);
+    // loungers, a patio table under an umbrella, potted plants and the
+    // pool ladder
+    if (!hot) {
+      const frame = new THREE.MeshStandardMaterial({ color: '#efece6', roughness: 0.5 });
+      const cushion = new THREE.MeshStandardMaterial({ color: '#2f6f8a', roughness: 0.9 });
+      for (const [lx, lz, a] of [[2.9, -3.3, -1.25], [4.1, -2.9, -1.4]]) {
+        const l = new THREE.Group();
+        const bed = new THREE.Mesh(new RoundedBoxGeometry(1.9, 0.08, 0.66, 2, 0.03), frame);
+        bed.position.y = 0.32;
+        const pad = new THREE.Mesh(new RoundedBoxGeometry(1.25, 0.07, 0.6, 2, 0.03), cushion);
+        pad.position.set(0.3, 0.39, 0);
+        const back = new THREE.Mesh(new RoundedBoxGeometry(0.7, 0.07, 0.6, 2, 0.03), cushion);
+        back.position.set(-0.72, 0.58, 0);
+        back.rotation.z = -0.7;
+        l.add(bed, pad, back);
+        for (const x of [-0.85, 0.85])
+          for (const z of [-0.28, 0.28]) {
+            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.3, 0.05), frame);
+            leg.position.set(x, 0.15, z);
+            l.add(leg);
+          }
+        l.position.set(lx, 0, lz);
+        l.rotation.y = a;
+        l.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+        g.add(reflective(l));
+      }
     }
-    chair.position.set(1.9, 0, -1.4);
-    chair.rotation.y = -0.6;
-    chair.traverse((o) => ((o as THREE.Mesh).castShadow = true));
-    g.add(reflective(chair));
+    {
+      const patio = new THREE.Group();
+      const iron = new THREE.MeshStandardMaterial({ color: '#2d2f31', roughness: 0.5, metalness: 0.4 });
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.03, 24), new THREE.MeshStandardMaterial({ color: '#dfe3e2', roughness: 0.15, metalness: 0.1 }));
+      top.position.y = 0.72;
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.4, 8), iron);
+      stem.position.y = 1.2;
+      const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.35, 0.45, 8, 1, true), new THREE.MeshStandardMaterial({ color: hot ? '#7d766c' : '#e9e1cc', roughness: 0.9, side: THREE.DoubleSide, flatShading: true }));
+      canopy.position.y = 2.35;
+      patio.add(top, stem, canopy);
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.74, 6), iron);
+        leg.position.set(Math.cos(a) * 0.35, 0.37, Math.sin(a) * 0.35);
+        leg.rotation.set(Math.sin(a) * 0.25, 0, -Math.cos(a) * 0.25);
+        patio.add(leg);
+      }
+      patio.position.set(-3.1, 0, -3.5);
+      patio.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+      g.add(reflective(patio));
+    }
+    for (const [px, pz, k] of [[-3.6, -4.1, 1], [3.1, -4.2, 0.8], [-1.9, -4.3, 0.65]]) {
+      const pot = new THREE.Group();
+      const clay = new THREE.Mesh(new THREE.CylinderGeometry(0.24 * k, 0.17 * k, 0.42 * k, 16), new THREE.MeshStandardMaterial({ color: '#b5643c', roughness: 0.9 }));
+      clay.position.y = 0.21 * k;
+      pot.add(clay);
+      const leaves = new THREE.MeshStandardMaterial({ color: hot ? '#5e5a4e' : '#4c7a3a', roughness: 0.85, flatShading: true });
+      for (let n = 0; n < 7; n++) {
+        const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 * k, 1), leaves);
+        b.position.set((r() - 0.5) * 0.3 * k, (0.5 + r() * 0.35) * k, (r() - 0.5) * 0.3 * k);
+        pot.add(b);
+      }
+      pot.position.set(px, 0, pz);
+      pot.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+      g.add(reflective(pot));
+    }
+    {
+      const steel = new THREE.MeshStandardMaterial({ color: '#d7dbe0', roughness: 0.2, metalness: 0.9 });
+      const ladder = new THREE.Group();
+      for (const dz of [-0.22, 0.22]) {
+        const pts = [new THREE.Vector3(0.16, -0.25, dz), new THREE.Vector3(0.12, 0.25, dz), new THREE.Vector3(-0.05, 0.42, dz), new THREE.Vector3(-0.22, 0.3, dz), new THREE.Vector3(-0.24, 0.02, dz)];
+        ladder.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.02, 8), steel));
+      }
+      for (const y of [-0.15, 0.05]) {
+        const step = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.44), steel);
+        step.position.set(0.15, y, 0);
+        ladder.add(step);
+      }
+      // hanging into the pool from its far edge
+      ladder.position.set(0.4 * S, 0, -0.62 * S + 0.02);
+      ladder.rotation.y = -Math.PI / 2;
+      ladder.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+      g.add(ladder);
+    }
 
     // hot tub extras: a warm glow in the water and rising steam
     let update: ((t: number, dt: number) => void) | undefined;

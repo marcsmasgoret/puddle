@@ -24,6 +24,7 @@ export class Fishing {
   active = false;
 
   constructor(
+    /** where the line is drawn: over the water, after it */
     scene: THREE.Scene,
     private toys: Toys,
     private camera: THREE.PerspectiveCamera,

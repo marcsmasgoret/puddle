@@ -3,12 +3,16 @@
 // season and the time of day. Nothing is recorded; every note is composed
 // and synthesised in the browser (instruments.ts).
 //
-//   spring   airy and bright: piano arpeggios, a flute melody
-//   summer   warm and open: nylon guitar, sunny lydian colour, soft bass
-//   autumn   cozy: electric piano, jazzy seventh and ninth chords, bass
+//   spring   airy and bright: piano arpeggios, a flute melody that trills
+//            like the birds
+//   summer   warm and open: nylon guitar, sunny lydian colour, soft bass, a
+//            lazy shaker and hand drum
+//   autumn   cozy and a little wistful: electric piano in a minor (dorian)
+//            mode, jazzy seventh and ninth chords, bass, brushes
 //   winter   music box, celesta and soft sleigh bells; now and then a quiet
 //            arrangement of a traditional carol (all public domain)
-//   night    any season: slower, lower, sparser, more reverb
+//   night    any season: slower, lower, sparser, more reverb, its own
+//            instruments kept
 //
 // Structure: a section is a chord progression (each chord two bars) played
 // as a sustained pad, an accompaniment pattern and a melody built from a
@@ -19,7 +23,7 @@
 // Scheduling uses the standard Web Audio look-ahead pattern: a timer wakes
 // every 100 ms and queues the notes due in the next 300 ms at exact times.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Instruments } from './instruments';
+import { Instruments, midiHz } from './instruments';
 import type { Season, TimeOfDay } from '../scene/world/palettes';
 
 type Quality = 'maj' | 'min' | 'maj7' | 'min7' | 'dom7' | 'add9' | 'min9' | 'maj9' | 'sus4';
@@ -32,6 +36,7 @@ const SHAPES: Record<Quality, number[]> = {
 };
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
 const LYDIAN = [0, 2, 4, 6, 7, 9, 11];
+const DORIAN = [0, 2, 3, 5, 7, 9, 10];
 
 interface Style {
   bpm: number;
@@ -42,27 +47,37 @@ interface Style {
   melody: 'flute' | 'piano' | 'guitar' | 'rhodes' | 'musicBox' | 'bell';
   bass: boolean;
   bells: boolean;
+  /** soft percussion: summer shaker and hand drum, autumn brushes */
+  groove?: 'shaker' | 'brushes';
+  /** grace-note trills on the melody, like birdsong */
+  trills?: boolean;
   /** pad brightness 0…1 */
   bright: number;
   /** chance a bar's melody slot rests */
   rest: number;
 }
 
-const I: Chord = [0, 'maj'], ii7: Chord = [2, 'min7'], iii7: Chord = [4, 'min7'], IV: Chord = [5, 'maj'], V: Chord = [7, 'maj'];
+const I: Chord = [0, 'maj'], IV: Chord = [5, 'maj'], V: Chord = [7, 'maj'];
 const vi: Chord = [9, 'min'], vi7: Chord = [9, 'min7'], Imaj7: Chord = [0, 'maj7'], IVmaj7: Chord = [5, 'maj7'], V7: Chord = [7, 'dom7'];
 
 const STYLES: Record<Season, Style> = {
   spring: {
-    bpm: 74, keys: [62, 64, 65], scale: MAJOR, accomp: 'piano', melody: 'flute', bass: false, bells: false, bright: 0.65, rest: 0.25,
+    bpm: 74, keys: [62, 64, 65], scale: MAJOR, accomp: 'piano', melody: 'flute', bass: false, bells: false, bright: 0.65, rest: 0.25, trills: true,
     progressions: [[I, V, vi, IV], [IVmaj7, I, [5, 'add9'], V], [I, [4, 'min'], IV, I], [vi, IV, I, [7, 'sus4']]],
   },
   summer: {
-    bpm: 68, keys: [55, 57, 60], scale: LYDIAN, accomp: 'guitar', melody: 'guitar', bass: true, bells: false, bright: 0.55, rest: 0.3,
+    bpm: 68, keys: [55, 57, 60], scale: LYDIAN, accomp: 'guitar', melody: 'guitar', bass: true, bells: false, bright: 0.55, rest: 0.3, groove: 'shaker',
     progressions: [[Imaj7, [2, 'maj'], Imaj7, [2, 'maj']], [IVmaj7, Imaj7, IVmaj7, [7, 'sus4']], [Imaj7, vi7, IVmaj7, [0, 'add9']]],
   },
   autumn: {
-    bpm: 64, keys: [53, 55, 58], scale: MAJOR, accomp: 'rhodes', melody: 'rhodes', bass: true, bells: false, bright: 0.4, rest: 0.35,
-    progressions: [[ii7, V7, [0, 'maj9'], vi7], [IVmaj7, iii7, ii7, Imaj7], [[9, 'min9'], [2, 'min9'], [7, 'sus4'], [0, 'maj9']], [Imaj7, [4, 'min7'], IVmaj7, V7]],
+    // the key is the minor tonic here: i9, IV7 (the dorian colour), bVII, bIIImaj7
+    bpm: 62, keys: [50, 52, 55], scale: DORIAN, accomp: 'rhodes', melody: 'rhodes', bass: true, bells: false, bright: 0.38, rest: 0.35, groove: 'brushes',
+    progressions: [
+      [[0, 'min9'], [5, 'dom7'], [0, 'min7'], [5, 'dom7']],
+      [[0, 'min9'], [10, 'maj'], [3, 'maj7'], [7, 'min7']],
+      [[3, 'maj7'], [2, 'min7'], [0, 'min9'], [10, 'sus4']],
+      [[5, 'min7'], [10, 'dom7'], [3, 'maj9'], [0, 'min9']],
+    ],
   },
   winter: {
     bpm: 62, keys: [60, 62, 65], scale: MAJOR, accomp: 'musicBox', melody: 'bell', bass: false, bells: true, bright: 0.5, rest: 0.3,
@@ -294,9 +309,24 @@ export class Music {
         if (ev.beat % 2 === 0) deg = Math.round(deg / 2) * 2;
         const oct = Math.floor(deg / scale.length);
         const m = center + scale[((deg % scale.length) + scale.length) % scale.length] + 12 * oct;
-        this.playMelody(t + ev.beat * b + rand(-0.012, 0.012), m, vel * rand(0.8, 1), ev.len * b * 0.95);
+        const at = t + ev.beat * b + rand(-0.012, 0.012);
+        // spring: a quick bird-like trill into some of the longer notes
+        if (st.trills && ev.len >= 1 && Math.random() < 0.3) {
+          for (let k = 0; k < 3; k++) this.playMelody(at - 0.12 + k * 0.04, m + (k % 2 ? 2 : 0), vel * 0.45, 0.04);
+        }
+        this.playMelody(at, m, vel * rand(0.8, 1), ev.len * b * 0.95);
       }
     }
+    // summer: a lazy shaker on the off-beats and a hand drum on 1 and the
+    // "and" of 2; autumn: brushes swept on 2 and 4
+    if (st.groove === 'shaker' && !(this.night && Math.random() < 0.5)) {
+      for (let k = 0; k < 8; k++) if (k % 2 === 1 || Math.random() < 0.3) this.ins.shaker(t + k * (b / 2) + (k % 2 ? b * 0.07 : 0), (k % 2 ? 0.8 : 0.4) * vel, o);
+      const f = midiHz(((root - 36) % 12) + 48);
+      this.ins.handDrum(t, f, 0.8 * vel, o);
+      if (Math.random() < 0.6) this.ins.handDrum(t + 1.5 * b, f * 1.5, 0.45 * vel, o);
+      if (Math.random() < 0.4) this.ins.handDrum(t + 3 * b, f, 0.5 * vel, o);
+    }
+    if (st.groove === 'brushes') for (const k of [1, 3]) this.ins.brush(t + k * b - 0.08, 0.7 * vel, b * 0.9, o);
     // winter: a soft shimmer of sleigh bells on the off-beats, now and then
     if (st.bells && !this.night && first && Math.random() < 0.3) {
       for (let k = 1; k < 8; k += 2) this.ins.sleigh(t + k * b, 0.25, o);
@@ -344,8 +374,8 @@ export class Music {
 
   private playMelody(t: number, m: number, v: number, dur: number) {
     const o = this.out;
-    // at night the piano takes the melody in every season
-    const inst = this.night ? 'piano' : this.style.melody;
+    // each season keeps its own voice at night too (it just plays lower and softer)
+    const inst = this.style.melody;
     switch (inst) {
       case 'flute': return this.ins.flute(t, m, v, dur, o);
       case 'piano': return this.ins.piano(t, m, v, dur, o);

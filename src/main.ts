@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { FLUIDS, HOT_WATER, type FluidId, type FluidProperties } from './physics/fluids';
-import { makeGrid, pickResolution } from './physics/grid';
+import { makeGrid, pickResolution, SIZES, type PuddleSize } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
 import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
 import { newFinger, stepFinger, liftFinger, fingerDone, type Finger } from './physics/finger';
@@ -19,8 +19,6 @@ import { createSoundButton } from './ui/sound';
 import { Audio, haptic } from './audio/audio';
 import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
-import { Diagnostics } from './physics/diagnostics';
-import { EngGraphs } from './ui/engGraphs';
 import { AdaptiveQuality } from './render/quality';
 import { LavaCrust } from './render/lavaCrust';
 import { Toys } from './scene/toys';
@@ -170,8 +168,23 @@ function syncMood() {
 // ── layout ───────────────────────────────────────────────────────────────────
 const quality = new AdaptiveQuality(() => resize(), grid.nx);
 const rig = new CameraRig(camera);
+/** the puddle's longest chord: skipping stones are thrown along it */
+function skipLine() {
+  const o = solver.shape.outline;
+  let best = 0, a = o[0], b = o[0];
+  for (let i = 0; i < o.length; i++)
+    for (let j = i + 1; j < o.length; j++) {
+      const d = Math.hypot(o[i][0] - o[j][0], o[i][1] - o[j][1]);
+      if (d > best) [best, a, b] = [d, o[i], o[j]];
+    }
+  // stand at the end nearer the viewer (or the left end of a crosswise chord)
+  const flip = Math.abs(a[1] - b[1]) > 0.25 * Math.abs(a[0] - b[0]) ? a[1] < b[1] : a[0] > b[0];
+  if (flip) [a, b] = [b, a];
+  return { from: new THREE.Vector2(a[0], a[1]), to: new THREE.Vector2(b[0], b[1]) };
+}
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
+  rig.skipLine = skipLine();
   const f = frameCamera(solver.shape.outline, w / h);
   camera.aspect = w / h;
   rig.setBase(f, solver.shape.halfX, solver.shape.halfZ, w / h);
@@ -252,7 +265,9 @@ const stones = new Stones(
 );
 
 // ── fishing ──────────────────────────────────────────────────────────────────
-const fishing = new Fishing(scene, toys, camera, (s) => {
+// the line is drawn after the water (waterScene): drawn with the scene, the
+// water's refraction would pick it up again and show a second line
+const fishing = new Fishing(waterScene, toys, camera, (s) => {
   audio.nibble();
   rod.nibble(s);
 });
@@ -338,9 +353,6 @@ function slapAt(x: number, z: number) {
   solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
   lastSlap = { froude: +slap.froudeRequested.toFixed(2), sprayMl: +(launched * 1e6).toFixed(1) };
   audio.slap(chosenFluid.id, settings.strength, launched * 1e6);
-  // energy the slap puts into the layer: ½ρh|Δu|² integrated over the
-  // Gaussian impulse, E = π h Π₀² / (2ρ)
-  engGraphs?.slap(x, (Math.PI * solver.depthAt(x, z) * slap.pressureImpulse ** 2) / (2 * fluid.density));
   haptic(8 + settings.strength * 32);
 }
 
@@ -571,18 +583,19 @@ panel.addButtons([
     },
   ],
 ]);
-panel.addChoice<'small' | 'normal' | 'large' | 'huge'>(
+panel.addChoice<PuddleSize>(
   'Puddle size',
-  [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large'], ['huge', 'Huge']],
+  [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']],
   () => settings.size ?? 'normal',
   (s) => {
-    if (s === (settings.size ?? 'normal')) return;
+    const was = settings.size ?? 'normal';
+    if (s === was) return;
     settings.size = s;
     saveSettings();
     // the simulation is built for one size: fade out and start again
     const veil = document.createElement('div');
     veil.className = 'ui-veil';
-    veil.textContent = s === 'small' ? 'a smaller puddle…' : 'a bigger puddle…';
+    veil.textContent = SIZES[s] < SIZES[was] ? 'a smaller puddle…' : 'a bigger puddle…';
     document.body.append(veil);
     requestAnimationFrame(() => veil.classList.add('on'));
     setTimeout(() => {
@@ -593,13 +606,13 @@ panel.addChoice<'small' | 'normal' | 'large' | 'huge'>(
     }, 450);
   },
 );
-panel.addChoice<'slap' | 'skip' | 'fish' | 'boat'>(
+const markMode = panel.addChoice<'slap' | 'skip' | 'fish' | 'boat'>(
   'Play',
   [['slap', 'Slap'], ['skip', 'Skip stones'], ['fish', 'Fishing'], ['boat', 'RC boat']],
   () => settings.mode,
   setMode,
 );
-panel.addButtons([
+const [engButton] = panel.addButtons([
   [
     'Engineering mode',
     () => {
@@ -647,8 +660,14 @@ engineering = new Engineering(
   },
   __COMMIT__,
 );
-const engGraphs = new EngGraphs(new Diagnostics(renderer, solver), solver, () => fluid.density, () => gravity);
-engineering.onToggle = (o) => engGraphs.setOpen(o);
+engineering.onToggle = (o) => {
+  engButton.classList.toggle('on', o);
+  // the overlays read best on the plain puddle: engineering mode slaps
+  if (o && settings.mode !== 'slap') {
+    setMode('slap');
+    markMode('slap');
+  }
+};
 if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
 // test hooks (used by the automated screenshot checks)
 (window as unknown as { __puddle: unknown }).__puddle = {
@@ -747,7 +766,6 @@ renderer.setAnimationLoop(() => {
   water.uniforms.uTime.value += dt;
   if (lavaOn) lavaLight.intensity = 7 + 0.6 * Math.sin(solver.simTime * 2.3) + 0.5 * Math.sin(solver.simTime * 5.1);
   pipeline.render(dt);
-  engGraphs.update(Math.min(dt, 1 / 20));
   if (engineering!.isOpen) {
     overlay.render(renderer, camera, toys.toys.map((t) => t.body), gravity);
     engineering!.update(performance.now());

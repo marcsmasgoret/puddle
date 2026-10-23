@@ -2,6 +2,7 @@
 // glass card. The scene stays clean until it is opened.
 import { settings, saveSettings } from './settings';
 import { handSpeed } from '../physics/slap';
+import { registerCard } from './cards';
 
 export interface Panel {
   isOpen(): boolean;
@@ -28,10 +29,13 @@ export function createPanel(): Panel {
 
   let open = false;
   const setOpen = (o: boolean) => {
+    if (o) one.opening();
     open = o;
     card.classList.toggle('open', o);
     button.classList.toggle('active', o);
+    one.sync();
   };
+  const one = registerCard({ isOpen: () => open, close: () => setOpen(false) });
   button.addEventListener('click', () => setOpen(!open));
 
   const panel: Panel = {

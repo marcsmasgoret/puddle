@@ -2,6 +2,7 @@
 // toys. Drag one out onto the scene to drop it in; tap one to drop it in the
 // middle of the puddle; drag a toy back onto the button to put it away.
 import type { ToyKind as AnyToy } from '../physics/toyBodies';
+import { registerCard } from './cards';
 
 /** toys offered in the drawer (the bobber and the RC boat belong to their modes) */
 type ToyKind = Exclude<AnyToy, 'bobber' | 'rcboat'>;
@@ -50,10 +51,13 @@ export function createDrawer(h: DrawerHandlers) {
 
   let open = false;
   const setOpen = (o: boolean) => {
+    if (o) one.opening();
     open = o;
     tray.classList.toggle('open', o);
     button.classList.toggle('active', o);
+    one.sync();
   };
+  const one = registerCard({ isOpen: () => open, close: () => setOpen(false) });
   button.addEventListener('click', () => setOpen(!open));
 
   function startDrag(e: PointerEvent, kind: ToyKind) {

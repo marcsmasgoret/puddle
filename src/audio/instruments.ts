@@ -18,6 +18,10 @@
 //  pad        three detuned saws through a slowly breathing lowpass: strings.
 //  bass       a round sine-triangle bass.
 //  sleigh     a few jingles: short high resonances on noise.
+//  shaker     a shaken seed pod: a short burst of highpassed noise.
+//  handDrum   a soft frame drum / cajón: a sine whose pitch drops as the
+//             skin relaxes, with a touch of slap noise.
+//  brush      a brush swept across a snare: a slow swell of soft noise.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const midiHz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -283,6 +287,49 @@ export class Instruments {
       o.start(t);
       o.stop(t + dur * 1.4 + 0.5);
     }
+  }
+
+  shaker(t: number, vel: number, out: AudioNode) {
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.noise;
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = 'bandpass';
+    hp.frequency.value = 7000;
+    hp.Q.value = 1.2;
+    s.connect(hp).connect(this.gainEnv(t, 0.035 * vel, 0.012, 0.07, out));
+    s.start(t, Math.random() * 2);
+    s.stop(t + 0.15);
+  }
+
+  handDrum(t: number, f: number, vel: number, out: AudioNode) {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(f * 1.5, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+    o.connect(this.gainEnv(t, 0.11 * vel, 0.004, 0.35, out));
+    o.start(t);
+    o.stop(t + 0.45);
+    const s = ctx.createBufferSource();
+    s.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800;
+    bp.Q.value = 0.8;
+    s.connect(bp).connect(this.gainEnv(t, 0.02 * vel, 0.002, 0.05, out));
+    s.start(t, Math.random() * 2);
+    s.stop(t + 0.1);
+  }
+
+  brush(t: number, vel: number, dur: number, out: AudioNode) {
+    const s = this.ctx.createBufferSource();
+    s.buffer = this.noise;
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'bandpass';
+    lp.frequency.value = 3200;
+    lp.Q.value = 0.6;
+    s.connect(lp).connect(this.gainEnv(t, 0.022 * vel, dur * 0.4, dur * 0.6, out));
+    s.start(t, Math.random() * 2);
+    s.stop(t + dur + 0.05);
   }
 
   sleigh(t: number, vel: number, out: AudioNode) {

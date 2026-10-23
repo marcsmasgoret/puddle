@@ -1,8 +1,7 @@
 // Camera poses for each way of playing, with smooth moves between them.
-//   slap / boat   the framed view: the puddle fills the bottom of the screen
-//   skip          first person: crouched at the near-left corner of the
-//                 puddle, looking along its longest diagonal, ready to throw
-//   fish          first person: standing at the near shore, rod in hand
+//   slap / boat / fish   the framed view: the puddle fills the bottom of the screen
+//   skip          first person: crouched just off one end of the puddle's
+//                 longest chord, looking along it to the farthest shore
 import * as THREE from 'three';
 import type { Framing } from './framing';
 
@@ -21,6 +20,8 @@ export class CameraRig {
   private halfZ = 0.7;
   private portrait = false;
   private current: Pose | null = null;
+  /** the puddle's longest chord, near end first (for skipping) */
+  skipLine: { from: THREE.Vector2; to: THREE.Vector2 } | null = null;
 
   constructor(private camera: THREE.PerspectiveCamera) {}
 
@@ -37,18 +38,19 @@ export class CameraRig {
     const b = this.base!;
     const hx = this.halfX, hz = this.halfZ;
     switch (this.mode) {
-      case 'skip':
+      case 'skip': {
+        const l = this.skipLine;
+        if (!l) return { pos: new THREE.Vector3(-hx * 0.78, 0.42, hz * 0.95), look: new THREE.Vector3(hx * 0.55, -0.12, -hz * 0.55), fov: this.portrait ? 72 : 58 };
+        const back = l.from.clone().sub(l.to).normalize();
+        const len = l.from.distanceTo(l.to);
+        const at = l.from.clone().addScaledVector(back, 0.4 + 0.1 * len);
+        const look = l.from.clone().lerp(l.to, 0.75);
         return {
-          pos: new THREE.Vector3(-hx * 0.78, 0.42, hz * 0.95),
-          look: new THREE.Vector3(hx * 0.55, -0.12, -hz * 0.55),
-          fov: this.portrait ? 72 : 58,
+          pos: new THREE.Vector3(at.x, 0.36 + 0.05 * len, at.y),
+          look: new THREE.Vector3(look.x, -0.06, look.y),
+          fov: this.portrait ? 72 : 56,
         };
-      case 'fish':
-        return {
-          pos: new THREE.Vector3(-0.15, 1.15, hz + 1.0),
-          look: new THREE.Vector3(0.1, -0.25, -hz * 0.4),
-          fov: this.portrait ? 70 : 54,
-        };
+      }
       default:
         return { pos: b.position.clone(), look: b.target.clone(), fov: b.fov };
     }

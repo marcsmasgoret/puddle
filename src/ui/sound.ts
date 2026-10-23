@@ -2,6 +2,8 @@
 // with separate levels for the music and for the sounds of the place (water,
 // animals, weather), and a mute switch, so the puddle can run quietly next
 // to your own music.
+import { registerCard } from './cards';
+
 export interface SoundControls {
   music(): number;
   setMusic(v: number): void;
@@ -51,9 +53,13 @@ export function createSoundButton(c: SoundControls) {
   });
   let open = false;
   const setOpen = (o: boolean) => {
+    if (o) one.opening();
     open = o;
     card.classList.toggle('open', o);
+    b.classList.toggle('active', o);
+    one.sync();
   };
+  const one = registerCard({ isOpen: () => open, close: () => setOpen(false) });
   b.addEventListener('click', () => setOpen(!open));
   document.body.append(b, card);
   sync();

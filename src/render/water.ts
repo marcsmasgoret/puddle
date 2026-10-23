@@ -236,34 +236,47 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           col = mix(body, texture2D(uSceneColor, refrUv).rgb, T) + spec;
         } else if (uMode == 3) {
           // ── lava ──
-          float crust = texture2D(uCrust, vUv).r;
-          // the crust breaks into plates; their seams cool last and glow
-          // plates of mixed sizes: big slabs broken into smaller ones here and there
-          vec2 q = vWPos.xz * 11.0 + vec2(vnoise(vWPos.xz * 4.0), vnoise(vWPos.xz * 4.0 + 3.0)) * 1.2;
+          // rafts of solid crust floating on glowing melt. The plate pattern
+          // lives on material coordinates carried with the flow (lavaCrust.ts),
+          // so the plates drift, turn and pull apart with the melt
+          vec4 cr = texture2D(uCrust, vUv);
+          float crust = cr.r;
+          vec2 mc = cr.gb;
+          vec2 q = mc * 11.0 + vec2(vnoise(mc * 4.0), vnoise(mc * 4.0 + 3.0)) * 1.2;
           vec3 vc = voronoi(q);
-          vec3 vc2 = voronoi(q * 2.3 + 5.0);
-          float small = step(0.55, vnoise(vWPos.xz * 3.0 + 9.0));
-          float seam = max(smoothstep(0.16, 0.0, vc.y - vc.x), small * smoothstep(0.1, 0.0, vc2.y - vc2.x) * 0.8);
-          // each plate has its own age: some still glow dull red through
-          float plateHot = smoothstep(0.75, 1.0, fract(vc.z * 13.7)) * 0.5;
-          // where the skin is thin, molten rock shows: slowly churning,
-          // brighter (hotter) in the folds
-          float churn = fbm(vWPos.xz * 7.0 + vec2(uTime * 0.05, -uTime * 0.03));
-          float exposed = clamp(1.0 - crust * (1.15 - 0.5 * seam * crust), 0.0, 1.0);
-          exposed = max(exposed, seam * (1.0 - crust) * 1.5);
-          float T = uLavaT - 260.0 * crust - 120.0 * (1.0 - churn);
+          float edge = vc.y - vc.x; // distance to the plate's border (cell units)
+          // thinner crust: wider cracks between plates, and some plates gone
+          float gap = mix(0.03, 0.62, smoothstep(0.15, 0.95, 1.0 - crust));
+          float present = step(fract(vc.z * 7.31) * 0.55, crust);
+          float aa = fwidth(edge) * 1.2 + 1e-4;
+          float solid = smoothstep(gap - aa, gap + aa, edge) * present;
+          // the melt: flowing incandescent rock, cooler (darker, redder)
+          // in streaks and in a skin along the edge of each plate
+          float churn = fbm(mc * 7.0 + vec2(uTime * 0.12, -uTime * 0.08));
+          float streak = fbm(mc * vec2(18.0, 6.0) + churn * 1.5 - uTime * 0.05);
+          float rim = present * (1.0 - smoothstep(0.0, 0.16, edge - gap + 0.06));
+          float T = uLavaT - 190.0 * (1.0 - churn) - 200.0 * streak * streak - 260.0 * rim - 100.0 * crust;
           // radiance ∝ T⁴ (Stefan–Boltzmann), relative to 1420 K
-          float I = pow(T / 1420.0, 4.0) * 4.5;
-          vec3 glow = blackbody(T) * I;
-          // the crust: dark glassy basalt, a little ropy, catching the sky
-          vec3 nc = normalize(n + vec3(vnoise(vWPos.xz * 40.0) - 0.5, 0.0, vnoise(vWPos.xz * 40.0 + 7.0) - 0.5) * 0.1);
+          float I = pow(T / 1420.0, 4.0) * 2.1;
+          vec3 melt = blackbody(T) * I;
+          // the liquid surface is smooth: a faint glassy sheen of the sky
+          melt += refl * fresnel(cosV, 1.6) * 0.25 + uSunColor * min(D * geom, 30.0) * NdL * 0.05;
+          // the plates: dark glassy basalt, each tilted a little its own way
+          // so they catch the light as separate solid pieces, ropy on top
+          float tilt = vc.z * 6.283;
+          vec3 nc = normalize(n + vec3(cos(tilt), 0.0, sin(tilt)) * 0.12
+                              + vec3(vnoise(mc * 60.0) - 0.5, 0.0, vnoise(mc * 60.0 + 7.0) - 0.5) * 0.12);
+          // raised edges: a bevel facing out of the plate
+          float bevel = 1.0 - smoothstep(gap, gap + 0.1, edge);
+          float NdLc = max(dot(nc, uSunDir), 0.0);
           float Fc = fresnel(clamp(dot(nc, V), 0.0, 1.0), 1.55);
-          float Dc = ggx(nc, Hv, 0.35);
-          vec3 crustCol = uCrustColor * (uAmbient * 0.6 + uSunColor * NdL * 0.5) + refl * Fc * 0.3
-                        + uSunColor * min(Dc * geom, 20.0) * NdL * 0.08;
-          // a thin crust still glows dull red from beneath
-          crustCol += blackbody(950.0) * (0.12 * (1.0 - crust) + plateHot * 0.35) * (1.0 - seam);
-          col = mix(crustCol, glow, exposed);
+          vec3 Hc = normalize(uSunDir + V);
+          float Dc = ggx(nc, Hc, 0.35);
+          vec3 crustCol = uCrustColor * (uAmbient * 0.6 + uSunColor * NdLc * 0.5) * (1.0 + 0.25 * (vnoise(mc * 25.0) - 0.5))
+                        + refl * Fc * 0.3 + uSunColor * min(Dc * geom, 20.0) * NdLc * 0.08;
+          // hot underside showing at the plate's bevelled edge; young plates glow dull red
+          crustCol += blackbody(1000.0) * (bevel * 0.35 + 0.1 * smoothstep(0.75, 1.0, fract(vc.z * 13.7)) * (1.0 - crust));
+          col = mix(melt, crustCol, solid);
           edgeBand = 0.002;
         } else {
           // ── dielectric ──

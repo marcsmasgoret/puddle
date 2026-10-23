@@ -7,9 +7,13 @@
 //   thrust     the propeller pushes with up to T_max = 0.25 N along the
 //              hull; its reaction is a jet of water thrown backward, added
 //              to the fluid as momentum −F Δt over a small patch at the stern
-//   rudder     side force ∝ ½ ρ v² A_r sin δ at the stern turns the hull, so
-//              it can only steer while moving (and steers harder the faster
-//              it goes); yaw is damped by the water
+//   rudder     the rudder sits in the propeller's wash, so it bites even
+//              at low speed (the wash speed grows with √thrust) and harder
+//              as the boat speeds up; the hull follows a turn of radius
+//              ≈ L / tan δ, so the yaw rate is (flow over the rudder) × tan δ
+//              / L, capped at what a 20 cm hull manages (~2.5 rad/s).
+//              Steering is applied to the heading directly: the solver's
+//              roll damping would otherwise swallow the small yaw torque
 //
 // Top speed is where thrust balances form drag, ~0.8 m/s, faster than the
 // shallow-water wave speed √(gh) ≈ 0.5 m/s in 2.5 cm: the boat outruns its
@@ -21,8 +25,10 @@ import type { Toys } from './toys';
 import type { Impulse } from '../physics/solver';
 
 const T_MAX = 0.25; // [N]
-const RUDDER_AREA = 6e-4; // [m²] effective, rudder + hull side
-const YAW_DAMP = 0.004; // [N·m·s]
+const LENGTH = 0.2; // [m]
+const DELTA_MAX = 0.6; // [rad] full rudder
+const YAW_MAX = 2.5; // [rad/s]
+const UP = new THREE.Vector3(0, 1, 0);
 
 type BoatToy = ReturnType<Toys['spawn']>;
 
@@ -31,6 +37,7 @@ export class RcBoat {
   throttle = 0;
   steer = 0;
   private keys = new Set<string>();
+  private yawRate = 0;
   /** called with the motor level 0…1 every frame (for the sound) */
   onMotor: (level: number) => void = () => {};
 
@@ -86,10 +93,18 @@ export class RcBoat {
     const b = this.boat.body;
     if (b.submerged <= 0) return;
     const fwd = new THREE.Vector3(1, 0, 0).applyQuaternion(b.quat);
+    fwd.y = 0;
+    fwd.normalize();
     const v = b.vel.dot(fwd);
-    // rudder: side force at the stern turns the hull (yaw torque about y)
-    const torque = -0.5 * density * v * Math.abs(v) * RUDDER_AREA * Math.sin(this.steer * 0.6) * 0.09 - YAW_DAMP * b.omega.y;
-    b.omega.y += (torque / b.def.inertia.y) * dt;
+    // flow over the rudder: the boat's own speed plus the propeller wash
+    // (actuator disc: wash ∝ √(T / ρA), ≈ 0.6 m/s at full throttle here)
+    const wash = 0.6 * Math.sqrt(Math.abs(this.throttle)) * Math.sign(this.throttle);
+    const flow = v + wash;
+    // stick right turns right (clockwise seen from above = negative yaw)
+    const want = THREE.MathUtils.clamp((-flow * Math.tan(this.steer * DELTA_MAX)) / LENGTH, -YAW_MAX, YAW_MAX);
+    this.yawRate += (want - this.yawRate) * (1 - Math.exp(-dt * 5));
+    b.quat.premultiply(new THREE.Quaternion().setFromAxisAngle(UP, this.yawRate * dt));
+    b.omega.y = 0;
     // sideways drag of the keel: the hull goes where it points
     const side = new THREE.Vector3(0, 1, 0).cross(fwd).normalize();
     const vs = b.vel.dot(side);

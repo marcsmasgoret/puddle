@@ -148,13 +148,15 @@ body {
 .ui-drawer-button { right: auto; left: calc(14px + env(safe-area-inset-left)); top: auto; bottom: calc(14px + env(safe-area-inset-bottom)); }
 .ui-tray {
   position: fixed;
-  left: calc(14px + env(safe-area-inset-left));
-  bottom: calc(66px + env(safe-area-inset-bottom));
+  left: calc(66px + env(safe-area-inset-left));
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  max-width: calc(100vw - 80px);
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
-  padding: 10px;
+  padding: 8px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.38);
   background: rgba(36, 44, 54, 0.24);
@@ -181,6 +183,11 @@ body {
 }
 .ui-toy:hover { transform: scale(1.06); background: rgba(255, 255, 255, 0.34); }
 .ui-tray-clear { font-size: 12px; padding: 4px 10px; }
+@media (max-width: 420px) {
+  .ui-toy { width: 46px; height: 46px; }
+  .ui-toy svg { width: 34px; height: 34px; }
+  .ui-tray { gap: 6px; }
+}
 
 /* ── toast ──────────────────────────────────────────────────────────────── */
 .ui-toast {
@@ -208,18 +215,22 @@ body {
   z-index: 9;
 }
 .ui-toast.show { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 600px) {
+  .ui-toast { top: calc(66px + env(safe-area-inset-top)); max-width: calc(100vw - 32px); }
+}
 .ui-toast b { font-size: 18px; font-weight: 600; }
 .ui-toast small { opacity: 0.75; }
 
 .ui-button-3 { right: calc(118px + env(safe-area-inset-right)); }
+.ui-button-3.active { transform: none; }
 
 /* ── engineering mode ───────────────────────────────────────────────────── */
 .eng {
   position: fixed;
-  top: calc(14px + env(safe-area-inset-top));
+  top: calc(66px + env(safe-area-inset-top));
   left: calc(14px + env(safe-area-inset-left));
   width: min(330px, calc(100vw - 28px));
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - 150px);
   overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
@@ -282,7 +293,7 @@ body {
 
 /* phones: the engineering card sits below the corner buttons and leaves the puddle visible */
 @media (max-width: 600px) {
-  .eng { top: calc(66px + env(safe-area-inset-top)); max-height: 44vh; }
+  .eng { max-height: 44vh; }
 }
 
 /* sound card: drops down under the sound button */
@@ -361,6 +372,7 @@ body {
   z-index: 10;
 }
 .ui-stick.show { display: grid; place-items: center; }
+.ui-card-open .ui-stick { opacity: 0; pointer-events: none; }
 .ui-stick-knob {
   width: 46px;
   height: 46px;
@@ -385,38 +397,3 @@ body {
   z-index: 50;
 }
 .ui-veil.on { background: rgba(20, 26, 32, 0.92); color: rgba(255, 255, 255, 0.85); }
-
-/* ── engineering graphs ─────────────────────────────────────────────────── */
-.eng-graphs {
-  position: fixed;
-  left: calc(70px + env(safe-area-inset-left));
-  right: calc(14px + env(safe-area-inset-right));
-  bottom: calc(14px + env(safe-area-inset-bottom));
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 8px 10px 8px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(18, 24, 30, 0.66);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  color: #eef2f5;
-  font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition: opacity 0.22s, transform 0.22s;
-  z-index: 11;
-}
-.eng-graphs.open { opacity: 1; pointer-events: auto; transform: none; }
-.eng-tabs { display: flex; gap: 5px; margin-bottom: 6px; flex-wrap: wrap; }
-.eng-tabs .ui-chip { font-size: 12px; padding: 3px 9px; }
-.eng-graphs canvas { display: block; width: 100%; height: 150px; }
-.eng-gnote { opacity: 0.7; margin-top: 4px; font-size: 11.5px; }
-@media (max-width: 600px) {
-  .eng-graphs { left: 10px; right: 10px; }
-  .eng-graphs canvas { height: 110px; }
-}
-@media (min-width: 900px) {
-  .eng-graphs { left: calc(360px + env(safe-area-inset-left)); }
-}

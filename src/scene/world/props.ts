@@ -127,7 +127,7 @@ export function ridge(o: RidgeOpts) {
 /** wind sway: displaces vertices by height² · sin(t), applied to tree materials */
 export const sway = { time: { value: 0 }, strength: { value: 0.02 } };
 
-function swayMaterial(m: THREE.MeshStandardMaterial) {
+export function swayMaterial(m: THREE.MeshStandardMaterial) {
   m.onBeforeCompile = (s) => {
     s.uniforms.uSwayT = sway.time;
     s.uniforms.uSwayK = sway.strength;
@@ -238,8 +238,12 @@ export function conifers(spots: [number, number, number][], season: Season, seed
     inst.frustumCulled = false;
     group.add(reflective(inst));
   });
+  group.userData.trunks = spots.map(([x, z, h]): Trunk => [x, z, 0.075 * (h / 4.3), h]);
   return group;
 }
+
+/** a climbable trunk: [x, z, radius at the base, tree height] (squirrels use these) */
+export type Trunk = [number, number, number, number];
 
 const FOLIAGE: Record<Season, string[]> = {
   spring: ['#8cbf5a', '#9fcb6a', '#f2c6d6', '#7fb24a'],
@@ -353,6 +357,7 @@ export function broadleaves(spots: [number, number, number][], season: Season, s
     inst.frustumCulled = false;
     group.add(reflective(inst));
   });
+  group.userData.trunks = spots.map(([x, z, h]): Trunk => [x, z, 0.1 * (h / 3.4), h]);
   return group;
 }
 
@@ -438,7 +443,17 @@ export function openWater(
   y: number,
   deep: string,
   waters: Waters,
-  opts: { waves?: number; ice?: boolean; holes?: [number, number, number, number][] } = {},
+  opts: {
+    waves?: number;
+    ice?: boolean;
+    holes?: [number, number, number, number][];
+    /** shallows colour over sand near the shore (z = shoreZ), deepening over `shelf` metres */
+    shallow?: string;
+    shoreZ?: number;
+    shelf?: number;
+    /** how lit the water body is (dim it at night) */
+    light?: number;
+  } = {},
 ) {
   // a finely divided plane: enormous single triangles lose depth precision
   // and flicker against the ground
@@ -452,6 +467,9 @@ export function openWater(
         uRefl: { value: null },
         uReflMatrix: { value: new THREE.Matrix4() },
         uDeep: { value: new THREE.Color(deep) },
+        uShallow: { value: new THREE.Color(opts.shallow ?? deep) },
+        uShore: { value: new THREE.Vector2(opts.shoreZ ?? 0, opts.shelf ?? 1) },
+        uLight: { value: opts.light ?? 1 },
         uWaves: { value: opts.waves ?? 1 },
         uIce: { value: opts.ice ? 1 : 0 },
         // world-space rectangles (x0, z0, x1, z1) left dry: a dock, the shore
@@ -472,8 +490,9 @@ export function openWater(
       #include <fog_pars_fragment>
       uniform sampler2D uRefl;
       uniform mat4 uReflMatrix;
-      uniform vec3 uDeep;
-      uniform float uTime, uWaves, uIce;
+      uniform vec3 uDeep, uShallow;
+      uniform vec2 uShore;
+      uniform float uTime, uWaves, uIce, uLight;
       uniform vec4 uHoles[3];
       varying vec3 vW;
       ${NOISE}
@@ -481,19 +500,34 @@ export function openWater(
         vec2 p = vW.xz;
         for (int k = 0; k < 3; k++)
           if (p.x > uHoles[k].x && p.x < uHoles[k].z && p.y > uHoles[k].y && p.y < uHoles[k].w) discard;
-        float e = 0.15;
         float t = uTime * 0.6;
-        float h0 = vnoise(p * 0.8 + vec2(t, t * 0.6)) + 0.5 * vnoise(p * 2.1 - vec2(t * 0.8, 0.0));
-        float hx = vnoise((p + vec2(e, 0.0)) * 0.8 + vec2(t, t * 0.6)) + 0.5 * vnoise((p + vec2(e, 0.0)) * 2.1 - vec2(t * 0.8, 0.0));
-        float hz = vnoise((p + vec2(0.0, e)) * 0.8 + vec2(t, t * 0.6)) + 0.5 * vnoise((p + vec2(0.0, e)) * 2.1 - vec2(t * 0.8, 0.0));
-        vec3 n = normalize(vec3(-(hx - h0) / e * 0.06 * uWaves * (1.0 - uIce), 1.0, -(hz - h0) / e * 0.06 * uWaves * (1.0 - uIce)));
+        // ripples finer than a pixel would only alias into glitter and
+        // streaks: each octave fades out as the pixel footprint grows past it
+        float fw = length(fwidth(p));
+        vec2 g = vec2(0.0);
+        for (int k = 0; k < 4; k++) {
+          float f = k == 0 ? 0.05 : k == 1 ? 0.2 : k == 2 ? 0.8 : 2.1;
+          float a = k == 0 ? 6.0 : k == 1 ? 2.0 : k == 2 ? 1.0 : 0.5;
+          float fade = 1.0 - smoothstep(0.25, 1.0, fw * f);
+          vec2 q = p * f + vec2(t, t * 0.6) * (k == 3 ? -0.8 : 1.0) / (1.0 + float(k == 0) * 6.0);
+          float e = 0.12;
+          float h0 = vnoise(q);
+          g += a * f * fade * vec2(vnoise(q + vec2(e, 0.0)) - h0, vnoise(q + vec2(0.0, e)) - h0) / e;
+        }
+        g *= 0.06 * uWaves * (1.0 - uIce);
+        vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 V = normalize(cameraPosition - vW);
         vec3 R = reflect(-V, n);
         vec4 rc = uReflMatrix * vec4(vW + R * 30.0, 1.0);
         vec3 refl = texture2D(uRefl, clamp(rc.xy / rc.w * 0.5 + 0.5, 0.001, 0.999)).rgb;
         float cosV = clamp(dot(n, V), 0.0, 1.0);
         float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
-        vec3 col = mix(uDeep, refl, F);
+        // waves too small to resolve still tilt their facets toward the
+        // viewer: rough water mirrors less of the sky at grazing angles
+        F = mix(F, min(F, 0.4), smoothstep(0.02, 0.5, fw) * clamp(uWaves, 0.0, 1.0) * (1.0 - uIce));
+        // clear shallows over the sand, deepening offshore
+        vec3 body = mix(uShallow, uDeep, smoothstep(0.0, 1.0, (uShore.x - p.y) / uShore.y)) * uLight;
+        vec3 col = mix(body, refl, F);
         if (uIce > 0.5) col = mix(vec3(0.82, 0.88, 0.94), refl, F * 0.5);
         gl_FragColor = vec4(col, 1.0);
         #include <fog_fragment>
