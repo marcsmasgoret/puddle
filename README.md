@@ -6,7 +6,15 @@ Puddle is a browser toy built on a GPU solver for the shallow-water equations. W
 
 **Play:** https://marcmasgoret.ca/puddle/ · **Physics write-up:** [physics.html](https://marcmasgoret.ca/puddle/physics.html) · **Validation, live on your GPU:** [validate.html](https://marcmasgoret.ca/puddle/validate.html) · **Every build:** [builds.html](https://marcmasgoret.ca/puddle/builds.html)
 
-<!-- MEDIA -->
+<p align="center">
+  <img src="docs/media/slap.gif" width="560" alt="A hard slap in a forest puddle at sunset: a ring of waves spreads out and spray drops fall back in.">
+</p>
+<p align="center">
+  <img src="docs/media/mercury.gif" width="49%" alt="A slap in a puddle of mercury on a city street: the liquid mirror ripples and throws silver beads.">
+  <img src="docs/media/skip.gif" width="49%" alt="A stone skipping across a puddle at an Algonquin canoe camp, leaving a line of rings.">
+</p>
+
+*Real frames from the simulation: water in the forest, mercury in the city, and a skipping stone at Algonquin.*
 
 ## What you can do
 

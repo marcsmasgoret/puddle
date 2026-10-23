@@ -22,7 +22,8 @@ The original plan allowed CC0 models and sounds (Poly Pizza, Kenney, Quaternius,
 | [Three.js](https://threejs.org) | MIT | WebGL rendering, post-processing (EffectComposer, UnrealBloomPass, OutputPass) |
 | [Vite](https://vite.dev) | MIT | Build and dev server |
 | [TypeScript](https://www.typescriptlang.org) | Apache-2.0 | Language |
-| [KaTeX](https://katex.org) | MIT | Equation typesetting in the physics write-up (loaded from a CDN on that page only) |
+| [KaTeX](https://katex.org) | MIT | Equation typesetting on the physics write-up page (bundled into that page only) |
+| [marked](https://marked.js.org) | MIT | Markdown rendering of the physics write-up |
 
 ## Data and science
 
@@ -45,3 +46,6 @@ Physical properties and models are cited where they are used in the code. The ma
 - Gunn, R. & Kinzer, G. D. (1949). The terminal velocity of fall for water droplets in stagnant air. *J. Meteorology* 6, 243–248.
 - Minnaert, M. (1933). On musical air-bubbles and the sounds of running water. *Phil. Mag.* 16, 235–248.
 - Wallace, E. (2011). *WebGL Water*: the area-ratio caustics technique (madebyevan.com/webgl-water).
+- Stelling, G. S. & Duinmeijer, S. P. A. (2003). A staggered conservative scheme for every Froude number in rapidly varied shallow water flows. *Int. J. Numer. Meth. Fluids* 43, 1329–1354.
+- Stoker, J. J. (1957). *Water Waves*. Interscience (the dam-break solution used in validation).
+- Smagorinsky, J. (1963). General circulation experiments with the primitive equations. *Monthly Weather Review* 91, 99–164.
