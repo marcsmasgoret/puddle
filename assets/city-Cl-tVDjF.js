@@ -1,4 +1,4 @@
-import{C as e,E as t,F as n,It as r,K as i,M as a,Mt as o,Ot as s,_t as c,lt as l,ot as u}from"./solver-B8WNz4Cn.js";import{c as d,i as f,n as p,o as m,s as h}from"./main-CfGf6ZAS.js";function g(t,n,i){return new s({fog:!0,uniforms:r.merge([e.fog,e.lights,{uWall:{value:new a(t)},uNight:{value:n},uSeed:{value:i}}]),lights:!0,vertexShader:`
+import{C as e,E as t,F as n,It as r,K as i,M as a,Mt as o,Ot as s,_t as c,lt as l,ot as u}from"./solver-B8WNz4Cn.js";import{c as d,i as f,n as p,o as m,s as h}from"./main-CTRFbpxS.js";function g(t,n,i){return new s({fog:!0,uniforms:r.merge([e.fog,e.lights,{uWall:{value:new a(t)},uNight:{value:n},uSeed:{value:i}}]),lights:!0,vertexShader:`
       #include <common>
       #include <fog_pars_vertex>
       varying vec2 vF;

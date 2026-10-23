@@ -1,5 +1,10 @@
 [
   {
+    "sha": "aa00955",
+    "message": "Phase 10: README media, credits",
+    "date": "2026-10-23T10:51:50.600Z"
+  },
+  {
     "sha": "bf99454",
     "message": "Fix empty scene on first load; phone UI legibility",
     "date": "2026-10-23T10:26:46.049Z"
