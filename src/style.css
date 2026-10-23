@@ -46,7 +46,7 @@ body {
   height: 42px;
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(36, 44, 54, 0.2);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: rgba(255, 255, 255, 0.92);
@@ -58,8 +58,8 @@ body {
   touch-action: manipulation;
   z-index: 10;
 }
-.ui-button:hover { background: rgba(255, 255, 255, 0.26); }
-.ui-button.active { transform: rotate(90deg); background: rgba(255, 255, 255, 0.3); }
+.ui-button:hover { background: rgba(36, 44, 54, 0.32); }
+.ui-button.active { transform: rotate(90deg); background: rgba(36, 44, 54, 0.38); }
 
 .ui-panel {
   position: fixed;
@@ -69,8 +69,9 @@ body {
   box-sizing: border-box;
   padding: 16px 18px 14px;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  /* frosted glass with a faint dark tint, so white text stays legible over snow and bright sky */
+  background: rgba(36, 44, 54, 0.24);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   box-shadow: 0 10px 40px rgba(30, 40, 50, 0.18);
@@ -156,7 +157,7 @@ body {
   padding: 10px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.38);
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(36, 44, 54, 0.24);
   backdrop-filter: blur(20px) saturate(150%);
   -webkit-backdrop-filter: blur(20px) saturate(150%);
   box-shadow: 0 10px 40px rgba(30, 40, 50, 0.18);
@@ -189,7 +190,7 @@ body {
   transform: translate(-50%, -6px);
   padding: 8px 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(36, 44, 54, 0.24);
   border: 1px solid rgba(255, 255, 255, 0.32);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -278,3 +279,8 @@ body {
 .eng-links a:hover { text-decoration: underline; }
 .eng-btn { font: inherit; color: inherit; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
 .eng-btn:hover { background: rgba(255, 255, 255, 0.2); }
+
+/* phones: the engineering card sits below the corner buttons and leaves the puddle visible */
+@media (max-width: 600px) {
+  .eng { top: calc(66px + env(safe-area-inset-top)); max-height: 44vh; }
+}

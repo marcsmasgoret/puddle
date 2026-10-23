@@ -77,6 +77,9 @@ export class World {
     scene.add(this.mouseCat.group, this.wildlife.group);
     for (const m of hooks.groundMaterials) setGroundPrints(m, this.prints.target.texture);
     this.renderer = renderer;
+    // build the starting place (asynchronous: the location module is loaded
+    // on demand, so this runs after the rest of the app has been set up)
+    this.loading = this.apply(initial);
   }
 
   /** Change any part of the configuration; scenery is rebuilt as needed. */
