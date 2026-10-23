@@ -1,5 +1,10 @@
 [
   {
+    "sha": "2e9a574",
+    "message": "Phase 2: slap with strength slider, stirring, splash droplets",
+    "date": "2026-10-23T04:37:45.587Z"
+  },
+  {
     "sha": "80176d0",
     "message": "Phase 1: GPU shallow-water solver and realistic water rendering in the forest",
     "date": "2026-10-23T04:08:09.714Z"
