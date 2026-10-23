@@ -1,5 +1,10 @@
 [
   {
+    "sha": "6b21653",
+    "message": "Fix overlaps, games and lava; new Beach, PEI dunes, city and pool scenery; birdsong",
+    "date": "2026-10-23T22:44:16.607Z"
+  },
+  {
     "sha": "5ed368f",
     "message": "Quieter console: skip toNonIndexed on already non-indexed geometry",
     "date": "2026-10-23T17:28:30.273Z"
