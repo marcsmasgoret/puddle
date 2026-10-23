@@ -1,5 +1,10 @@
 [
   {
+    "sha": "80176d0",
+    "message": "Phase 1: GPU shallow-water solver and realistic water rendering in the forest",
+    "date": "2026-10-23T04:08:09.714Z"
+  },
+  {
     "sha": "a49993f",
     "message": "Normalize line endings",
     "date": "2026-10-23T03:03:01.745Z"
