@@ -127,6 +127,7 @@ export class World {
         waters: this.waters,
       });
       this.scene.add(this.built.group);
+      this.clearPuddle(this.built.group);
     }
     this.def = def;
 
@@ -136,7 +137,15 @@ export class World {
       this.critterKey = critterKey;
       // animals keep to solid ground: off open water and out of the puddle
       const walkable = (x: number, z: number) => !def.water?.(x, z) && this.solver.sdfAt(x, z) > 0.1;
-      this.mouseCat.configure(def.critters.mouse, c.season === 'winter', walkable);
+      // the mouse's spots, moved out to the shore if the puddle has grown over them
+      const spots = { ...def.critters.mouse, from: [...def.critters.mouse.from] as [number, number], to: [...def.critters.mouse.to] as [number, number] };
+      for (const s of [spots.from, spots.to]) {
+        for (let k = 0; k < 200 && this.solver.sdfAt(s[0], s[1]) < 0.25; k++) {
+          s[0] *= 1.02;
+          s[1] = s[1] * 1.02 - 0.005;
+        }
+      }
+      this.mouseCat.configure(spots, c.season === 'winter', walkable);
       this.wildlife.configure(def.critters.habitat, c.season, c.time, walkable);
       this.prints.clear(this.renderer);
     }
@@ -152,6 +161,28 @@ export class World {
     }
     this.waterFreezes = c.season === 'winter' && def.freezes(c.season);
     this.updateIce();
+  }
+
+  /**
+   * Props placed near the puddle (logs, chairs, rocks…) are nudged out of
+   * the water when the puddle is made bigger.
+   */
+  private clearPuddle(group: THREE.Group) {
+    const sdf = (x: number, z: number) => this.solver.sdfAt(x, z);
+    for (const o of group.children) {
+      const p = o.position;
+      if (p.lengthSq() < 1e-6 || Math.hypot(p.x, p.z) > 12) continue;
+      const box = new THREE.Box3().setFromObject(o);
+      const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+      if (r > 4) continue;
+      for (let k = 0; k < 200 && sdf(p.x, p.z) < r * 0.8 + 0.1; k++) {
+        const e = 0.03;
+        const gx = sdf(p.x + e, p.z) - sdf(p.x - e, p.z), gz = sdf(p.x, p.z + e) - sdf(p.x, p.z - e);
+        const l = Math.hypot(gx, gz) || 1;
+        p.x += (gx / l) * 0.03;
+        p.z += (gz / l) * 0.03;
+      }
+    }
   }
 
   /** ice forms only on water (honey doesn't freeze, mercury not until −39 °C) */

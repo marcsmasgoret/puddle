@@ -236,6 +236,9 @@ export class Music {
 
   private tick() {
     if (!this.running) return;
+    // timers are throttled in background tabs: never try to "catch up" on
+    // missed bars (that would play them all at once), just carry on
+    if (this.nextTime < this.ctx.currentTime - 0.2) this.nextTime = this.ctx.currentTime + 0.1;
     const ahead = this.ctx.currentTime + 0.3;
     while (this.nextTime < ahead) {
       if (this.carol) this.scheduleCarolBar(this.nextTime);

@@ -19,11 +19,17 @@ import { createSoundButton } from './ui/sound';
 import { Audio, haptic } from './audio/audio';
 import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
+import { Diagnostics } from './physics/diagnostics';
+import { EngGraphs } from './ui/engGraphs';
 import { AdaptiveQuality } from './render/quality';
 import { LavaCrust } from './render/lavaCrust';
 import { Toys } from './scene/toys';
 import { Stones } from './scene/stones';
 import { Fishing } from './scene/fishing';
+import { CameraRig } from './scene/cameraRig';
+import { Rod } from './scene/rod';
+import { RcBoat } from './scene/rcBoat';
+import { createTutorial } from './ui/tutorial';
 import { STONE } from './physics/skipping';
 import { toast } from './ui/toast';
 import { settings, saveSettings } from './ui/settings';
@@ -163,13 +169,12 @@ function syncMood() {
 
 // ── layout ───────────────────────────────────────────────────────────────────
 const quality = new AdaptiveQuality(() => resize(), grid.nx);
+const rig = new CameraRig(camera);
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   const f = frameCamera(solver.shape.outline, w / h);
-  camera.fov = f.fov;
   camera.aspect = w / h;
-  camera.position.copy(f.position);
-  camera.lookAt(f.target);
+  rig.setBase(f, solver.shape.halfX, solver.shape.halfZ, w / h);
   camera.updateProjectionMatrix();
   pipeline.setSize(w, h, Math.min(window.devicePixelRatio, phoneish ? 2 : 1.75) * quality.scale);
 }
@@ -247,15 +252,40 @@ const stones = new Stones(
 );
 
 // ── fishing ──────────────────────────────────────────────────────────────────
-const fishing = new Fishing(scene, toys, camera, () => audio.nibble());
-fishing.onCast = () => audio.cast();
+const fishing = new Fishing(scene, toys, camera, (s) => {
+  audio.nibble();
+  rod.nibble(s);
+});
 
-function setMode(m: 'slap' | 'skip' | 'fish') {
+// ── ways to play: camera, rod, boat, and the how-to button ───────────────────
+const rod = new Rod(scene);
+fishing.tipProvider = () => rod.tip();
+fishing.onCast = () => {
+  audio.cast();
+  rod.startCast();
+};
+const boat = new RcBoat(toys);
+boat.createStick();
+boat.onMotor = (l) => audio.setMotor(l);
+const tutorial = createTutorial();
+function setMode(m: 'slap' | 'skip' | 'fish' | 'boat') {
   settings.mode = m;
   saveSettings();
+  rig.mode = m;
+  rod.visible = m === 'fish';
   if (m !== 'fish') fishing.reelIn(true);
-  if (m === 'skip') toast('flick sideways across the puddle <small>· about 20° up is the magic angle</small>', 4200);
-  if (m === 'fish') toast('tap the water to cast <small>· tap the grass to reel in</small>', 4200);
+  if (m === 'boat') {
+    // launch the boat on the water near the middle
+    for (let k = 0; k < 40; k++) {
+      const x = (Math.random() - 0.5) * solver.shape.halfX, z = (Math.random() - 0.5) * solver.shape.halfZ;
+      if (solver.sdfAt(x, z) < -0.25) {
+        boat.launch(new THREE.Vector3(x, 0.08, z));
+        break;
+      }
+    }
+  } else boat.remove();
+  boat.stickVisible = m === 'boat';
+  tutorial.show(m === 'slap' ? null : m);
 }
 
 const ndcAt = (cx: number, cy: number) => {
@@ -308,6 +338,9 @@ function slapAt(x: number, z: number) {
   solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
   lastSlap = { froude: +slap.froudeRequested.toFixed(2), sprayMl: +(launched * 1e6).toFixed(1) };
   audio.slap(chosenFluid.id, settings.strength, launched * 1e6);
+  // energy the slap puts into the layer: ½ρh|Δu|² integrated over the
+  // Gaussian impulse, E = π h Π₀² / (2ρ)
+  engGraphs?.slap(x, (Math.PI * solver.depthAt(x, z) * slap.pressureImpulse ** 2) / (2 * fluid.density));
   haptic(8 + settings.strength * 32);
 }
 
@@ -344,16 +377,18 @@ attachPointer(canvas, camera, {
     if (f) liftFinger(f);
   },
   onPressAnywhere: () => {
-    if (!panel.isOpen() && !drawer.isOpen() && !soundCard.isOpen()) return false;
+    if (!panel.isOpen() && !drawer.isOpen() && !soundCard.isOpen() && !tutorial.isOpen()) return false;
     panel.close();
     drawer.close();
     soundCard.close();
+    tutorial.close();
     return true;
   },
   onPickDown: (id, ndc) => settings.mode !== 'fish' && toys.pick(id, ndc),
-  mode: () => settings.mode,
+  mode: () => (settings.mode === 'boat' ? 'slap' : settings.mode),
   onFlick(dx, dy, ms, start) {
-    stones.throwFrom({ dx, dy, ms, start }, canvas.clientWidth);
+    // first person: the stone goes where you are facing
+    stones.throwFrom({ dx, dy, ms, start }, canvas.clientWidth, { origin: camera.position.clone(), dir: rig.forward() });
   },
   onCast: (x, z) => fishing.cast(x, z),
   onReel: () => fishing.reelIn(),
@@ -536,9 +571,31 @@ panel.addButtons([
     },
   ],
 ]);
-panel.addChoice<'slap' | 'skip' | 'fish'>(
+panel.addChoice<'small' | 'normal' | 'large' | 'huge'>(
+  'Puddle size',
+  [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large'], ['huge', 'Huge']],
+  () => settings.size ?? 'normal',
+  (s) => {
+    if (s === (settings.size ?? 'normal')) return;
+    settings.size = s;
+    saveSettings();
+    // the simulation is built for one size: fade out and start again
+    const veil = document.createElement('div');
+    veil.className = 'ui-veil';
+    veil.textContent = s === 'small' ? 'a smaller puddle…' : 'a bigger puddle…';
+    document.body.append(veil);
+    requestAnimationFrame(() => veil.classList.add('on'));
+    setTimeout(() => {
+      const q = new URLSearchParams(location.search);
+      q.delete('size');
+      location.search = q.toString();
+      location.reload();
+    }, 450);
+  },
+);
+panel.addChoice<'slap' | 'skip' | 'fish' | 'boat'>(
   'Play',
-  [['slap', 'Slap'], ['skip', 'Skip stones'], ['fish', 'Fishing']],
+  [['slap', 'Slap'], ['skip', 'Skip stones'], ['fish', 'Fishing'], ['boat', 'RC boat']],
   () => settings.mode,
   setMode,
 );
@@ -554,6 +611,8 @@ panel.addButtons([
 world.ready().then(() => {
   syncMood();
   applyFluid(chosenFluid);
+  setMode(settings.mode ?? 'slap');
+  rig.snap();
 });
 
 document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
@@ -588,6 +647,8 @@ engineering = new Engineering(
   },
   __COMMIT__,
 );
+const engGraphs = new EngGraphs(new Diagnostics(renderer, solver), solver, () => fluid.density, () => gravity);
+engineering.onToggle = (o) => engGraphs.setOpen(o);
 if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
 // test hooks (used by the automated screenshot checks)
 (window as unknown as { __puddle: unknown }).__puddle = {
@@ -615,7 +676,15 @@ if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
   stones,
   fishing,
   setMode,
-  flick: (dx: number, dy: number, ms: number, z = 0) => stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth),
+  flick: (dx: number, dy: number, ms: number, z = 0) =>
+    settings.mode === 'skip'
+      ? stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth, { origin: camera.position.clone(), dir: rig.forward() })
+      : stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth),
+  boat,
+  rig,
+  get engineering() {
+    return engineering;
+  },
   spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat' | 'donut', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
   hold: (id: number, x: number, z: number) => fingers.set(id, newFinger(x, z, 'hold')),
   release: (id: number) => fingers.get(id) && liftFinger(fingers.get(id)!),
@@ -656,8 +725,14 @@ renderer.setAnimationLoop(() => {
   hotTubJets(Math.min(dt, 1 / 20));
   water.uniforms.uIce.value = world.ice.texture;
   water.uniforms.uIceOn.value = world.ice.enabled ? 1 : 0;
+  rig.update(Math.min(dt, 1 / 20));
+  if (rod.group.visible) {
+    rod.load = fishing.load;
+    rod.update(camera, Math.min(dt, 1 / 20));
+  }
+  boat.update(Math.min(dt, 1 / 20), fluid.density, (x, z) => solver.depthAt(x, z), (imp) => solver.addImpulse(imp));
   const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, gravity, (t) => {
-    const f = fishing.forceFor(t) ?? new THREE.Vector3();
+    const f = fishing.forceFor(t) ?? boat.forceFor(t) ?? new THREE.Vector3();
     return f.add(world.weather.windForce(WINDAGE[t.kind]));
   });
   stones.update(Math.min(dt, 1 / 20), fluid, gravity);
@@ -672,6 +747,7 @@ renderer.setAnimationLoop(() => {
   water.uniforms.uTime.value += dt;
   if (lavaOn) lavaLight.intensity = 7 + 0.6 * Math.sin(solver.simTime * 2.3) + 0.5 * Math.sin(solver.simTime * 5.1);
   pipeline.render(dt);
+  engGraphs.update(Math.min(dt, 1 / 20));
   if (engineering!.isOpen) {
     overlay.render(renderer, camera, toys.toys.map((t) => t.body), gravity);
     engineering!.update(performance.now());

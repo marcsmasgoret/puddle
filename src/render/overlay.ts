@@ -11,7 +11,7 @@ import { RHEOLOGY_GLSL, rheologyUniforms } from '../physics/rheology';
 import type { FluidProperties } from '../physics/fluids';
 import type { RigidBody } from '../physics/rigidbody';
 
-export type OverlayMode = 'off' | 'height' | 'velocity' | 'viscosity' | 'forces';
+export type OverlayMode = 'off' | 'height' | 'velocity' | 'viscosity' | 'forces' | 'vorticity' | 'froude';
 
 /** Colour maps shared with the legend bars in the engineering card. */
 export const COLORMAP_GLSL = /* glsl */ `
@@ -69,7 +69,7 @@ const fieldFragment = /* glsl */ `
 ${COMMON}
 ${COLORMAP_GLSL}
 ${RHEOLOGY_GLSL}
-uniform int uMode;        // 1 height, 2 speed, 3 viscosity / strain rate
+uniform int uMode;        // 1 height, 2 speed, 3 viscosity / strain rate, 4 vorticity, 5 Froude
 uniform float uScale;     // height: η at full colour [m]; speed: |u| at full colour [m/s]
 uniform float uG;
 varying vec2 vWorld;
@@ -94,6 +94,17 @@ void main() {
   } else if (uMode == 2) {
     col = viridis(length(velAt(c)) / uScale);
     a = 0.7;
+  } else if (uMode == 4) {
+    // vorticity ω = ∂v/∂x − ∂u/∂z: the water's spin (blue clockwise, red anticlockwise)
+    float vx = (S(c + ivec2(1, 0)).b - S(c - ivec2(1, 0)).b) / (2.0 * uDx);
+    float uz = (S(c + ivec2(0, 1)).g - S(c - ivec2(0, 1)).g) / (2.0 * uDx);
+    col = diverging((vx - uz) / 4.0);
+  } else if (uMode == 5) {
+    // Froude number Fr = |u| / √(g h): above 1 the flow outruns its waves
+    float h = max(shp.g + s.r, 0.0005);
+    float fr = length(velAt(c)) / sqrt(uG * h);
+    col = viridis(fr / 1.5);
+    col = mix(col, vec3(1.0), smoothstep(0.06, 0.0, abs(fr - 1.0)));
   } else {
     // the same strain rate the solver uses: bed shear 3|ū|/h with the
     // in-plane strain added in quadrature
@@ -282,7 +293,7 @@ export class Overlay {
     this.field.visible = this.mode !== 'forces';
     this.arrows.visible = this.mode === 'velocity';
     this.forces.visible = this.mode === 'forces';
-    fu.uMode.value = this.mode === 'height' ? 1 : this.mode === 'velocity' ? 2 : 3;
+    fu.uMode.value = this.mode === 'height' ? 1 : this.mode === 'velocity' ? 2 : this.mode === 'vorticity' ? 4 : this.mode === 'froude' ? 5 : 3;
     fu.uScale.value = this.mode === 'height' ? this.heightScale : this.speedScale;
     if (this.mode === 'forces') this.updateForces(bodies, g);
     const auto = renderer.autoClear;

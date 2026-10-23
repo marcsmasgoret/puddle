@@ -122,20 +122,21 @@ At $\Delta x = 4.5$ mm in water the capillary term dominates: $\Delta t \approx 
 
 The simulation runs in real SI units at real size, so no hidden scaling is applied anywhere. The only link between reality and the simulation is the grid spacing: ripples shorter than about $2\Delta x$ cannot be represented.
 
-| | Water (20 °C) | Honey | Mercury | Oobleck |
-|---|---|---|---|---|
-| Density $\rho$ (kg/m³) | 998.21 | 1420 | 13 534 | ≈ 1260 |
-| Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) |
-| Surface tension $\sigma$ (N/m) | 0.07274 | 0.063 | 0.4854 | ≈ 0.072 |
-| Kinematic viscosity $\nu$ (m²/s) | $1.0\times10^{-6}$ | $5.2\times10^{-3}$ | $1.1\times10^{-7}$ | $4\times10^{-3}$ at rest |
-| Capillary length $\ell_c$ (mm) | 2.7 | 2.1 | 1.9 | 2.4 |
-| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension |
+| | Water (20 °C) | Honey | Mercury | Oobleck | Lava | Red jello |
+|---|---|---|---|---|---|---|
+| Density $\rho$ (kg/m³) | 998.21 | 1420 | 13 534 | ≈ 1260 | ≈ 2600 | ≈ 1050 |
+| Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) | ≈ 100 | 0.6 (internal damping) |
+| Surface tension $\sigma$ (N/m) | 0.07274 | 0.063 | 0.4854 | ≈ 0.072 | ≈ 0.35 | ≈ 0.05 |
+| Elasticity | none | none | none | none | none | shear modulus $G \approx 1$ kPa (§4.2) |
+| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension | blackbody glow under a cooling crust (§4.3) | $n = 1.34$, red dye absorption |
 
 **Sources:**
 - Water: IAPWS R1-76(2014), IAPWS 2008, IAPWS-95; Pope & Fry 1997.
 - Honey: mean of commercial honeys at 20 °C, Newtonian (Yanniotis et al. 2006). Its viscosity ranges from ~2 to ~60 Pa·s with water content (Lazaridou et al. 2004).
 - Mercury: Inagaki, Arakawa & Williams 1981.
 - Oobleck: a starch volume fraction of 0.44 after Fall et al. 2012.
+- Lava: basaltic (pāhoehoe) melt near 1150 °C; Shaw et al. 1968, Murase & McBirney 1973.
+- Jello: a dessert-strength gelatin gel (2–3 wt %); Djabourov et al. 1988.
 
 **Two facts worth knowing:**
 - **Mercury's ripples are lively, but not because of its famous surface tension.** Per unit mass, its surface-tension effect $\sigma/\rho$ is *half* of water's. The real reason is its kinematic viscosity, 9× lower than water's, so its waves lose energy much more slowly.
@@ -143,7 +144,9 @@ The simulation runs in real SI units at real size, so no hidden scaling is appli
 
 ---
 
-## 4. Oobleck: shear thickening
+## 4. Oobleck, jello and lava
+
+### 4.1 Oobleck: shear thickening
 
 Cornstarch in water at a volume fraction around 0.44 flows like thick cream when stirred slowly and locks up almost solid when hit. Microscopically:
 - At low strain rate, lubricating films keep the grains apart.
@@ -168,6 +171,22 @@ $$\dot\gamma = \sqrt{(3|\bar{\mathbf u}|/h)^2 + |S|^2}$$
 - A hard slap shears the layer far above $\dot\gamma_c$, the viscosity jumps to its ceiling, the implicit bed friction stops the flow within a millisecond, and the surface barely ripples. A hand-sized slap at full strength moves it by about 0.2 mm, compared with 4 mm for water.
 - A slow press keeps $\dot\gamma$ low, so the finger sinks in.
 - When oobleck is hit it goes matte for a moment: the jammed grains poke through the surface (dilatancy). The renderer shows this, including a jammed patch that spreads wider than the impactor (Waitukaitis & Jaeger 2012).
+
+### 4.2 Red jello: an elastic gel
+
+Jello is not a liquid but a soft solid, so the layer gets one more field: the sideways displacement $\boldsymbol\xi$ of each column since rest, updated alongside the velocity ($\dot{\boldsymbol\xi} = \mathbf u$, after the velocity pass, so the scheme stays symplectic). A layer of depth $h$ bonded to the bowl and sheared by $\xi$ pulls back like a block of rubber glued to a plate, with stress $3G\xi/h$ (the elastic twin of the Poiseuille friction $3\mu\bar u/h$). Neighbouring columns are coupled by shear, $(G/\rho)\nabla^2\boldsymbol\xi$. The momentum equation gains
+
+$$\frac{\partial \mathbf u}{\partial t} \mathrel{+}= -\frac{3G}{\rho h^2}\,\boldsymbol\xi + \frac{G}{\rho}\nabla^2\boldsymbol\xi$$
+
+so each column wobbles at $\omega = \sqrt{3G/\rho}/h \approx 70$ rad/s (≈ 11 Hz) in 2.5 cm, disturbances spread as shear waves at $c_s = \sqrt{G/\rho} \approx 1$ m/s, and the viscous term damps the jiggle in about a second. The stability bound adds $3G/(\rho h_{\min}^2) + 8G/(\rho\Delta x^2)$ to $\omega_{\max}^2$ (§2.7).
+
+### 4.3 Lava: glow and crust
+
+Lava runs through the same equations with its own properties: dense, very viscous (so its waves are overdamped, like honey's) and with a high surface tension. What is new is the surface. Exposed melt at about 1420 K glows: its colour is blackbody radiation (by Wien's law the peak is at 2.0 µm, in the infrared, so only the red end reaches the visible) and its brightness follows the Stefan–Boltzmann $T^4$. The surface radiates and cools, and a dark glassy crust grows over still melt in seconds; wherever the melt moves or stretches, the crust tears. A crust field $c \in [0, 1]$ per cell models this:
+
+$$\frac{dc}{dt} = \frac{c_{eq} - c}{t_{crust}} - c\left(\frac{|\mathbf u|}{0.02\ \text{m/s}} + \frac{|S|}{2\ \text{s}^{-1}}\right)$$
+
+with $t_{crust} \approx 2.5$ s and $c_{eq} < 1$ over slowly drifting convective hot spots, where fresh melt keeps welling up.
 
 ---
 
@@ -199,20 +218,17 @@ A drop landing on water hands over its momentum $m v$ as a pressure impulse over
 
 Raindrops do the same at their terminal velocity, about 6.5 m/s for 2 mm drops (Gunn & Kinzer 1949). Non-wetting mercury drops stay as beads on the ground and roll back into the puddle.
 
-### 5.3 Stirring
+### 5.3 The fingertip: poking, pressing and stirring
 
-A dragged finger nudges the local velocity toward its own: $\Delta\mathbf u = \kappa\,\mathbf U_f$, with $\kappa = 1 - e^{-t_c/\tau}$, where $t_c = 2R_f/|U_f|$ is the time the finger spends over a point and $\tau \approx 50$ ms.
+A quick tap is a slap. A press that moves becomes a stir, and a press held still becomes a push into the fluid; either way the fingertip (radius $a \approx 9$ mm) goes into the layer, and three things follow:
 
-The Gaussian push converges ahead of the finger (a bow bulge) and diverges behind it (a trough). When the finger moves faster than $\sqrt{gH}$, its disturbances cannot outrun it and pile up into a **V-shaped wake**. Its half-angle obeys $\sin\alpha = c/U$: the same geometry as a supersonic jet's Mach cone.
+1. **Displacement.** Pushing the tip a depth $d$ in displaces $\pi a^2 d$ of fluid, added around the finger (and taken back as it comes out). In water it leaves as ripples; in honey it bulges into a raised collar that slowly spreads.
+2. **The dimple.** Water barely notices a slowly inserted finger (only the meniscus dips); a viscous liquid is dragged down with it. The dimple depth is $\delta = w\,d$, with a wetting-drag weight $w$ rising with viscosity on a log scale (≈ 0.08 for water and mercury, ≈ 0.85 for honey, oobleck and lava), applied as a surface pressure $p = \rho g\delta$. Dragged sideways this is a moving pressure disturbance, exactly what a ship's hull is to the sea: a bow bulge, a trough behind, and once the finger outruns $\sqrt{gH}$ a **V-shaped wake** with half-angle $\sin\alpha = c/U$ (a supersonic jet's Mach cone). In honey the trench it leaves closes slowly.
+3. **No-slip drag.** The fluid touching the finger moves with it: $\Delta\mathbf u = \kappa\,\mathbf U_f$, with $\kappa = 1 - e^{-t_c/\tau}$, $t_c = 2R_f/|U_f|$ the time the finger spends over a point and $\tau \approx 50$ ms. This is what swirls water, and what makes oobleck jam when you drag too fast.
 
-### 5.4 Press and hold (honey, oobleck)
+Pulling out of a viscous liquid, the liquid clings to the skin and is lifted in a short-lived mound before it oozes back (a brief negative pressure after release).
 
-A held finger is a steady Gaussian pressure load that ramps up as $p(t) = p_{\max}(1-e^{-t/0.5\,\text{s}})$, with $p_{\max} = \rho g\cdot 0.8H$. In equilibrium the surface sinks by $p/\rho g$.
-
-Holding is offered only where it shows something:
-- **Honey** refills its dent smoothly with no waves. Thin-film levelling is a diffusion with $D = \rho g h^3/3\mu$.
-- **Oobleck** at low strain rate lets the finger sink in.
-- **Water and mercury** would just replace the dent with sloshing waves.
+**A limitation worth naming.** The shallow-water layer treats honey's levelling as thin-film flow, with rate $\propto h^3 k^2$. For features narrower than the depth ($kh > 1$) real honey relaxes as a deep viscous fluid, at rate $\sim \rho g/(2\mu k)$, roughly a hundred times slower than the thin-film estimate for a fingertip-sized trench. So narrow trenches in honey close faster here than they would in a jar.
 
 ---
 
@@ -228,6 +244,8 @@ The duck, paper boat, toy sailboat and fishing bobber have their real sizes and 
 | Paper boat | 12 cm long | 3 g |
 | Sailboat | 16 cm long | 45 g |
 | Bobber | 2.4 cm across | 3.6 g |
+| Beach donut | 17 cm across | 12 g (740 cm³ of air: draft ≈ 1 mm) |
+| RC boat | 20 cm long | 60 g (draft ≈ 1 cm) |
 
 Each hull is voxelised into small sample volumes. The paper boat's flat folded base gives it a metacentric height $BM = I_{wp}/V \approx 5$ cm, far above its 9 mm centre of mass, so it is stable.
 
@@ -242,6 +260,11 @@ A body reads the fluid on a **ring just outside its footprint** and fits a plane
   $$B = \frac{\rho\,\omega\,A^2}{4h}$$
   In a 2.5 cm puddle this is strong: toys settle in a bob or two, and a duck dropped on dense mercury lands with a plop instead of bouncing.
 
+- **Wave drift.** Waves that run into a floating body are partly reflected, and reflecting a wave takes momentum: the body feels a steady push along the waves' direction of travel (radiation stress, Longuet-Higgins & Stewart 1964). A shallow-water wave carries momentum $E/c$ per unit width, with $E = \tfrac12\rho g a^2$, and since $u = \eta c/h$ in a progressive wave, $E/c = \rho c\langle\eta u\rangle$. For a body of width $W$:
+  $$F_{drift} = \rho\,c\,\langle\eta\,\mathbf u\rangle\,W$$
+  measured on the ring around each toy and averaged over ~0.4 s. It is what pushes toys away from a slap: four slaps moved the donut about 0.5 m.
+- **The shore.** The water is level with the ground, so a floating toy is held a little inside the edge and bounces softly off it, instead of riding up the bank.
+
 Large damping terms are integrated implicitly, $v \leftarrow (v + a\Delta t)/(1 + C\Delta t/m)$, which is unconditionally stable. Substeps are sized from the heave frequency $\omega = \sqrt{\rho g A/m}$.
 
 **Check.** At rest every toy floats at buoyancy = weight. Measured draft of the duck:
@@ -255,7 +278,7 @@ Large damping terms are integrated implicitly, $v \leftarrow (v + a\Delta t)/(1 
 
 ### 6.3 Body → fluid
 
-- **Pressure loads.** The buoyant force of the submerged samples is binned into three patches along the hull (bow, middle, stern). Each becomes a Gaussian pressure load with the same total force, drawn into a pressure-map texture. The fluid feels the equal and opposite push (Newton's third law): the toy sits in a real dent, and a moving toy pushes a bow wave and leaves a wake.
+- **Pressure loads.** The buoyant force of the submerged samples is binned into three patches along the hull (bow, middle, stern). Each becomes a Gaussian pressure load with the same total force, drawn into a pressure-map texture. The patches are kept inside the hull's footprint: real water meets the hull at the waterline and is flat outside it. The fluid feels the equal and opposite push (Newton's third law): the toy sits in a real dent, and a moving toy pushes a bow wave and leaves a wake.
 - **Drag reaction.** Momentum $-\mathbf F_d\Delta t$ is added to the water over the hull's footprint.
 - **Entry.** A toy landing is a small slap: the same impact model, limited to the momentum the toy carries ($m v$).
 
@@ -294,6 +317,14 @@ $$\mathbf F = \tfrac12\rho V^2 S\,(C_l\,\mathbf n - C_f\,\hat{\mathbf t})$$
 ### 7.2 Fishing
 
 The bobber is a 2.4 cm, 3.6 g float. It flies from a rod tip off-screen on a ballistic arc, lands with a splash and floats as a rigid body like the toys. Occasional "nibbles" are downward tugs of about 0.02 N, a few grams-force. They dip it and send out their own rings.
+
+### 7.3 The RC boat
+
+A 20 cm toy speedboat, floating like the other toys, with a propeller and a rudder:
+
+- **Thrust** up to $T_{max} = 0.25$ N along the hull. Its reaction is a jet of water thrown backward: momentum $-\mathbf T\,\Delta t$ added to the fluid over a 2 cm patch at the stern.
+- **Rudder**: a side force $\tfrac12\rho v|v| A_r \sin\delta$ at the stern turns the hull, so it steers only while moving, and harder the faster it goes. The keel resists sideways slip.
+- **Top speed** is where thrust balances form drag, about 0.8 m/s: faster than $\sqrt{gh} \approx 0.5$ m/s in 2.5 cm. The boat outruns its own waves and drags a V-shaped wake (§5.3).
 
 ---
 
@@ -415,3 +446,7 @@ The first version of the solver used semi-Lagrangian advection of velocity, and 
 20. Smagorinsky, J. (1963). General circulation experiments with the primitive equations. *Monthly Weather Review* 91, 99–164.
 21. Wallace, E. (2011). WebGL Water. madebyevan.com/webgl-water.
 22. Stoker, J. J. (1957). *Water Waves: The Mathematical Theory with Applications.* Interscience.
+23. Longuet-Higgins, M. S. & Stewart, R. W. (1964). Radiation stresses in water waves; a physical discussion, with applications. *Deep-Sea Research* 11, 529–562.
+24. Shaw, H. R., Wright, T. L., Peck, D. L. & Okamura, R. (1968). The viscosity of basaltic magma: an analysis of field measurements in Makaopuhi lava lake, Hawaii. *Am. J. Sci.* 266, 225–264.
+25. Murase, T. & McBirney, A. R. (1973). Properties of some common igneous rocks and their melts at high temperatures. *GSA Bulletin* 84, 3563–3592.
+26. Djabourov, M., Leblond, J. & Papon, P. (1988). Gelation of aqueous gelatin solutions. II. Rheology of the sol-gel transition. *J. Phys. France* 49, 333–343.

@@ -8,10 +8,10 @@ Puddle ships **no third-party art or audio assets**. Everything you see and hear
 |---|---|
 | Scenery (ridges, mountains, trees, boulders, buildings, the Lions Gate Bridge, the CN Tower, the canoe, tent, dock, Muskoka chair) | Procedural geometry from Three.js primitives (`src/scene/world/`) |
 | Rubber duck, paper boat, toy sailboat, bobber, skipping stone | Procedural geometry (`src/scene/toyModels.ts`, `src/scene/stones.ts`) |
-| Animals (mouse, tabby cat, birds, squirrels, rabbits, deer, fox, fish, loon) | Procedural articulated rigs with code-driven animation (`src/scene/animals/`). The tabby coat is a shader. |
+| Animals (mouse, tabby cat, birds, squirrels, rabbits, deer, fox, fish, loon) | Sculpted from blended shapes, meshed with Surface Nets, auto-skinned and animated with a foot-placement gait engine (`src/scene/animals/`). Coats are shaders; close animals have shell fur. |
 | Ground, sand, asphalt, tile, wood, granite, pebbles, snow, leaves | Procedural shaders (`src/render/ground.ts`) |
 | Sky, stars, moon, clouds | Procedural shader (`src/scene/atmosphere.ts`) |
-| Sound effects and ambience | Synthesised live with the Web Audio API (`src/audio/`) |
+| Music, sound effects and nature sounds | Synthesised live with the Web Audio API (`src/audio/`). The winter music includes arrangements of traditional carols in the public domain: *Silent Night* (Gruber, 1818), *Jingle Bells* (Pierpont, 1857), *We Wish You a Merry Christmas* and *Deck the Halls* (traditional). The Lions Gate soundscape quotes the opening notes of *O Canada* (Lavallée, 1880; public domain) as the Canada Place horns play them. |
 
 The original plan allowed CC0 models and sounds (Poly Pizza, Kenney, Quaternius, Poly Haven, Freesound CC0). In the end the calm, abstract art direction worked better with a single procedural style, and it keeps the first load small. If CC0 assets are added later, list each one here with its source URL, author and licence.
 
@@ -45,6 +45,10 @@ Physical properties and models are cited where they are used in the code. The ma
 - Phillips, O. M. (1957). On the generation of waves by turbulent wind. *J. Fluid Mech.* 2, 417–445.
 - Gunn, R. & Kinzer, G. D. (1949). The terminal velocity of fall for water droplets in stagnant air. *J. Meteorology* 6, 243–248.
 - Minnaert, M. (1933). On musical air-bubbles and the sounds of running water. *Phil. Mag.* 16, 235–248.
+- Longuet-Higgins, M. S. & Stewart, R. W. (1964). Radiation stresses in water waves. *Deep-Sea Research* 11, 529–562 (wave drift on toys).
+- Shaw, H. R. et al. (1968) and Murase, T. & McBirney, A. R. (1973): basaltic lava viscosity, density and surface tension.
+- Djabourov, M. et al. (1988): gelatin gel rheology (red jello).
+- Dolbear, A. E. (1897). The cricket as a thermometer. *American Naturalist* 31, 970–971 (cricket chirp rates).
 - Wallace, E. (2011). *WebGL Water*: the area-ratio caustics technique (madebyevan.com/webgl-water).
 - Stelling, G. S. & Duinmeijer, S. P. A. (2003). A staggered conservative scheme for every Froude number in rapidly varied shallow water flows. *Int. J. Numer. Meth. Fluids* 43, 1329–1354.
 - Stoker, J. J. (1957). *Water Waves*. Interscience (the dam-break solution used in validation).

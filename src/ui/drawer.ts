@@ -3,8 +3,8 @@
 // middle of the puddle; drag a toy back onto the button to put it away.
 import type { ToyKind as AnyToy } from '../physics/toyBodies';
 
-/** toys offered in the drawer (the bobber belongs to fishing mode) */
-type ToyKind = Exclude<AnyToy, 'bobber'>;
+/** toys offered in the drawer (the bobber and the RC boat belong to their modes) */
+type ToyKind = Exclude<AnyToy, 'bobber' | 'rcboat'>;
 
 export interface DrawerHandlers {
   /** a drag out of the drawer started (pointer id, client coords) */

@@ -58,7 +58,7 @@ export class Stones {
   }
 
   /** Turn a screen flick into a throw. Returns the throw for the readout. */
-  throwFrom(f: Flick, screenW: number): ThrowInfo {
+  throwFrom(f: Flick, screenW: number, aim?: { origin: THREE.Vector3; dir: THREE.Vector3 }): ThrowInfo {
     // speed: a flick across ~2/3 of the screen in a fifth of a second is a
     // strong throw (~6 m/s); faster flicks also spin the stone harder
     const widthsPerSec = Math.hypot(f.dx, f.dy) / screenW / Math.max(f.ms / 1000, 0.04);
@@ -78,8 +78,17 @@ export class Stones {
       }
     }
     const run = RELEASE_HEIGHT / Math.tan(RELEASE_ANGLE);
-    const pos = new THREE.Vector3(edge + dir * (0.08 - run), RELEASE_HEIGHT, z);
-    const vel = new THREE.Vector3(dir * speed * Math.cos(RELEASE_ANGLE), -speed * Math.sin(RELEASE_ANGLE), 0);
+    let pos = new THREE.Vector3(edge + dir * (0.08 - run), RELEASE_HEIGHT, z);
+    let vel = new THREE.Vector3(dir * speed * Math.cos(RELEASE_ANGLE), -speed * Math.sin(RELEASE_ANGLE), 0);
+    if (aim) {
+      // first person: thrown straight ahead from where you crouch; find the
+      // water's edge along that line and touch down just inside it
+      const d = aim.dir.clone().setY(0).normalize();
+      const p = aim.origin.clone().setY(0);
+      for (let k = 0; k < 600 && !this.world.isFluid(p.x, p.z); k++) p.addScaledVector(d, 0.01);
+      pos = p.addScaledVector(d, 0.08 - run).setY(RELEASE_HEIGHT);
+      vel = d.multiplyScalar(speed * Math.cos(RELEASE_ANGLE)).setY(-speed * Math.sin(RELEASE_ANGLE));
+    }
     const stone = new Stone(pos, vel, Math.max(tilt, 0), spinHz * Math.PI * 2);
     this.add(stone);
     return { speed, tiltDeg: (tilt * 180) / Math.PI, spinHz };

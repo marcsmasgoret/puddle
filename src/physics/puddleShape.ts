@@ -15,7 +15,7 @@
 //           slow down and bend (refract) as they run into the shallows, just
 //           like ocean swell approaching a beach.
 // ─────────────────────────────────────────────────────────────────────────────
-import { DOMAIN_X, DOMAIN_Z, type Grid } from './grid';
+import { DOMAIN_X, DOMAIN_Z, SIZE_SCALE, type Grid } from './grid';
 
 export interface PuddleShape {
   /** Outline polygon in world xz [m] */
@@ -44,7 +44,7 @@ function mulberry32(seed: number) {
  * generous puddle deep enough for toys to float freely (a rubber duck draws
  * about 7 mm, the toy sailboat about 1 cm).
  */
-export const BOWL_DEPTH = 0.025;
+export const BOWL_DEPTH = 0.025 * Math.pow(SIZE_SCALE, 0.98); // bigger puddles are deeper too
 
 /**
  * Outline of the puddle: an organic blob (random Fourier harmonics on an
@@ -93,6 +93,11 @@ export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, spec: ShapeSpec 
       }
       outline.push([dx * t, dz * t]);
     }
+  }
+  // the size setting scales the puddle (the domain scales with it)
+  for (const p of outline) {
+    p[0] *= SIZE_SCALE;
+    p[1] *= SIZE_SCALE;
   }
   let halfX = 0;
   let halfZ = 0;

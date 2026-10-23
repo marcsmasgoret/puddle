@@ -27,9 +27,32 @@
 //   R = η(i,j)   G = u(i-½,j)   B = v(i,j-½)   A = outflow limiter θ (see swe/shaders.ts)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Puddle size (the size control in the settings): the whole simulation
+ * domain, the puddle and its depth scale together. Chosen at load time
+ * (the simulation's textures are built for it), from ?size= or the saved
+ * setting.
+ */
+export const SIZES = { small: 0.8, normal: 1, large: 1.3, huge: 1.6 } as const;
+export type PuddleSize = keyof typeof SIZES;
+function readSize(): number {
+  // the validation tests always run at the standard size
+  if (location.pathname.endsWith('validate.html')) return 1;
+  try {
+    const q = new URLSearchParams(location.search).get('size') as PuddleSize | null;
+    if (q && q in SIZES) return SIZES[q];
+    const s = JSON.parse(localStorage.getItem('puddle.settings.v1') ?? '{}').size as PuddleSize | undefined;
+    if (s && s in SIZES) return SIZES[s];
+  } catch {
+    /* no storage */
+  }
+  return 1;
+}
+export const SIZE_SCALE = typeof location === 'undefined' ? 1 : readSize();
+
 /** Domain extent along x and z [m]. The puddle fits inside with a margin. */
-export const DOMAIN_X = 2.3;
-export const DOMAIN_Z = 1.65;
+export const DOMAIN_X = 2.3 * SIZE_SCALE;
+export const DOMAIN_Z = 1.65 * SIZE_SCALE;
 
 export interface Grid {
   nx: number;

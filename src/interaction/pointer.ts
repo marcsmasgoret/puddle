@@ -23,7 +23,7 @@ export interface PointerHandlers {
   onPickDown?(id: number, ndc: THREE.Vector2): boolean;
   onCarryMove?(id: number, ndc: THREE.Vector2, clientX: number, clientY: number): void;
   onCarryEnd?(id: number, clientX: number, clientY: number): void;
-  mode(): 'slap' | 'skip' | 'fish';
+  mode(): 'slap' | 'skip' | 'fish' | 'boat';
   onFlick(dx: number, dy: number, ms: number, startGround: THREE.Vector3): void;
   onCast(x: number, z: number): void;
   onReel(): void;

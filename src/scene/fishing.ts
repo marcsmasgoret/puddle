@@ -37,9 +37,18 @@ export class Fishing {
     scene.add(this.line);
   }
 
-  /** The rod tip: just off the bottom-right corner of the screen. */
+  /** where the line leaves the rod (set by the rod in your hands) */
+  tipProvider: (() => THREE.Vector3) | null = null;
+
+  /** The rod tip: from the rod if there is one, else just off-screen. */
   private rodTip() {
+    if (this.tipProvider) return this.tipProvider();
     return new THREE.Vector3(1.25, -0.25, 0.4).unproject(this.camera).sub(this.camera.position).normalize().multiplyScalar(0.9).add(this.camera.position);
+  }
+
+  /** how hard the line is pulling now (0…1), for the rod's bend */
+  get load() {
+    return this.tug > 0 ? Math.min(1, this.tugForce * 20) : this.reeling ? 0.5 : 0.1;
   }
 
   onCast: () => void = () => {};

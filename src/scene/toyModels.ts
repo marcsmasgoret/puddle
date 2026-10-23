@@ -3,7 +3,7 @@
 // offset so its origin is the centre of mass.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DUCK, PAPER, SAIL, BOBBER, DONUT, type ToyKind } from '../physics/toyBodies';
+import { DUCK, PAPER, SAIL, BOBBER, DONUT, RCBOAT, rcHalfBeam, type ToyKind } from '../physics/toyBodies';
 import { LAYER_REFLECT } from '../render/pipeline';
 
 function tinted(g: THREE.BufferGeometry, color: string) {
@@ -166,7 +166,63 @@ function donut() {
   return { geo, mat, com: DONUT.com };
 }
 
-const builders = { duck, paperBoat: paperBoat, sailboat, bobber, donut };
+/** RC speedboat: white V hull with a red stripe, a tinted windscreen, a little flag. */
+function rcboat() {
+  const { length: L, depth: D } = RCBOAT;
+  // hull: lofted from the same half-beam function as the physics hull
+  const nx = 40, ny = 10;
+  const pos: number[] = [];
+  const col: number[] = [];
+  const white = new THREE.Color('#f3f1ec'), red = new THREE.Color('#d1322a'), blue = new THREE.Color('#1f4f8a');
+  const P = (i: number, j: number, s: number) => {
+    const x = -L / 2 + (i / nx) * L * 0.999;
+    const y = (j / ny) * D;
+    const hb = Math.max(rcHalfBeam(x, Math.max(y, 0.0005)), 0);
+    return [x, y, s * hb];
+  };
+  const C = (j: number) => (j < 3 ? blue : j < 5 ? red : white);
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const a = P(i, j, s), b = P(i + 1, j, s), c = P(i + 1, j + 1, s), d = P(i, j + 1, s);
+      const quad = s > 0 ? [a, b, c, a, c, d] : [a, c, b, a, d, c];
+      for (const v of quad) pos.push(...v);
+      for (let k = 0; k < 6; k++) col.push(...C(j).toArray());
+    }
+  }
+  // deck
+  for (let i = 0; i < nx; i++) {
+    const a = P(i, ny, -1), b = P(i + 1, ny, -1), c = P(i + 1, ny, 1), d = P(i, ny, 1);
+    for (const v of [a, c, b, a, d, c]) pos.push(...v);
+    for (let k = 0; k < 6; k++) col.push(0.85, 0.83, 0.8);
+  }
+  const hull = new THREE.BufferGeometry();
+  hull.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  hull.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  hull.computeVertexNormals();
+  const cabin = new THREE.BoxGeometry(0.06, 0.018, 0.045);
+  cabin.translate(-0.01, D + 0.009, 0);
+  const screen = new THREE.BoxGeometry(0.004, 0.02, 0.05);
+  screen.rotateZ(-0.6);
+  screen.translate(0.025, D + 0.012, 0);
+  const pole = new THREE.CylinderGeometry(0.0012, 0.0012, 0.05, 6);
+  pole.translate(-0.085, D + 0.025, 0);
+  const flag = new THREE.PlaneGeometry(0.02, 0.012);
+  flag.translate(-0.095, D + 0.044, 0);
+  const geo = mergeGeometries([
+    hull,
+    tinted(cabin, '#e9e6df'),
+    tinted(screen, '#26394a'),
+    tinted(pole, '#333'),
+    tinted(flag, '#d1322a'),
+  ].map((g) => {
+    if (g.attributes.uv) g.deleteAttribute('uv');
+    return g.index ? g.toNonIndexed() : g;
+  }));
+  const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.7, side: THREE.DoubleSide });
+  return { geo, mat, com: RCBOAT.com };
+}
+
+const builders = { duck, paperBoat: paperBoat, sailboat, bobber, donut, rcboat };
 const cache = new Map<ToyKind, { geo: THREE.BufferGeometry; mat: THREE.Material }>();
 
 export function toyMesh(kind: ToyKind) {

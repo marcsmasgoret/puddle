@@ -300,10 +300,17 @@ export class Wildlife {
   }
 
   // ── small mammals ─────────────────────────────────────────────────────────
-  private squirrel(trees: [number, number][]): Actor | null {
+  private squirrel(all: [number, number][]): Actor | null {
+    // only trees on land, and a run between them that stays on land
+    const trees = all.filter(([x, z]) => this.walkable(x, z));
+    if (trees.length < 2) return null;
     const a = trees[Math.floor(Math.random() * trees.length)];
     let b = trees[Math.floor(Math.random() * trees.length)];
     if (b === a) b = trees[(trees.indexOf(a) + 1) % trees.length];
+    for (let k = 1; k < 20; k++) {
+      const t = k / 20;
+      if (!this.walkable(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return null;
+    }
     const p = new THREE.Vector3(a[0], 0, a[1]);
     const goal = new THREE.Vector3(b[0], 0, b[1]);
     const s = this.spec('squirrel');
@@ -386,9 +393,15 @@ export class Wildlife {
       ? new Quadruped(sculpt(s, 'low'), s, { cadence: 1.0, cadenceGain: 0.5, height: 0.9, tailCurve: 0.2 })
       : new Quadruped(sculpt(s), s, { cadence: 2.0, cadenceGain: 0.8, height: 0.33, tailCurve: 0.05 });
     const dir = Math.random() < 0.5 ? 1 : -1;
-    const z = -(deer ? 16 : 10) - Math.random() * 10;
+    // a crossing line that is land all the way (never across a lake)
+    const lineOk = (z: number) => {
+      for (let x = -22; x <= 22; x += 2) if (!this.walkable(x, z)) return false;
+      return true;
+    };
+    const tries = [0, 1, 2, 3, 4, 5].map(() => -(deer ? 16 : 10) - Math.random() * 10).concat([-6, -5, -4.5]);
+    const z = tries.find(lineOk);
+    if (z === undefined) return null;
     q.pos.set(-dir * 22, 0, z);
-    if (!this.walkable(q.pos.x, q.pos.z)) return null;
     q.yaw = dir > 0 ? 0 : Math.PI;
     q.gait = deer ? 'walk' : 'trot';
     const obj = new THREE.Group();

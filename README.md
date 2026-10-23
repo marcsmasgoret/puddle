@@ -19,18 +19,20 @@ Puddle is a browser toy built on a GPU solver for the shallow-water equations. W
 ## What you can do
 
 - **Slap** the water. Hand speed is set by the strength slider, 0.3 to 5 m/s. Hard slaps throw spray, and the spray lands back as drops that make their own ripples.
-- **Stir** by dragging. Move faster than the wave speed and you leave a V-shaped wake.
-- **Change the fluid:** water, honey, mercury or oobleck, each with measured density, viscosity, surface tension and optics. Oobleck goes solid when you hit it and lets your finger sink in when you press slowly.
-- **Float toys:** a rubber duck, a paper boat and a sailboat, at their real sizes and masses. They ride the waves and make their own.
-- **Skip stones** with a sideways flick. About 20° of tilt is the magic angle.
-- **Fish:** cast a bobber and watch it. Nothing is ever caught.
-- **Pick a place:** forest, beach, city, backyard, dock, High Park, the Lions Gate Bridge, or an Algonquin canoe camp. Change the season, time of day and weather. Rain, gusts of wind, autumn leaves and winter ice all act on the water. In winter the backyard pool turns into a 38 °C hot tub.
-- **Watch the wildlife:** birds, squirrels, deer, loons, and once in a while a cat chasing a mouse.
-- **Sound:** synthesised live, never recorded. It has a volume slider and a mute button, so you can leave it running while you listen to music.
+- **Stir** by dragging, or **press and hold** to push a fingertip in. Move faster than the wave speed and you leave a V-shaped wake; drag through honey and the trench oozes shut.
+- **Change the fluid:** water, honey, mercury, oobleck, lava or red jello, each with measured properties. Oobleck goes solid when you hit it; lava glows under a cooling crust that tears where it moves; jello is an elastic gel that jiggles and springs back.
+- **Float toys:** a rubber duck, a paper boat, a sailboat and a beach donut, at their real sizes and masses. They ride the waves, get pushed along by them, and make their own.
+- **Skip stones** in first person with a side-arm swipe. About 20° of tilt is the magic angle.
+- **Fish** with a rod in your hands: cast, then watch the bobber. Nothing is ever caught.
+- **Drive an RC boat** with the thumb stick or the arrow keys. Faster than the waves, it drags a V-shaped wake.
+- **Make the puddle bigger** (and deeper), or smaller.
+- **Pick a place:** forest, a PEI beach, a Mediterranean beach, a city street in Toronto, a backyard pool, a cottage dock, High Park, the Lions Gate Bridge, or an Algonquin canoe camp. Change the season, time of day and weather. Rain, gusts of wind, autumn leaves and winter ice all act on the water. At night there are stars, a moon and city lights.
+- **Watch the wildlife:** sculpted, skinned animals with real gaits: robins, crows, gulls, geese, mallards, loons, squirrels, cottontails, a doe, a fox, leaping bass, and once in a while a tabby cat stalking a mouse.
+- **Listen:** generative music for each season (a cozy autumn, music-box carols in winter) and a nature soundscape for each place and time of day, all synthesised live. Music and nature have their own volume.
 - **Engineering mode** (in the settings panel):
-  - live readouts of the solver;
-  - overlays of surface height, velocity, strain rate and viscosity, and the forces on each toy;
-  - sliders for every physical parameter, including gravity;
+  - live graphs: the puddle's kinetic and potential energy, a space–time diagram of the waves against √(gh), a wave probe's spectrum, and the fluid's momentum;
+  - overlays of surface height, velocity, vorticity, Froude number, strain rate and viscosity, and the forces on each toy;
+  - live readouts of the solver, and sliders for every physical parameter, including gravity;
   - a choice of grid resolution.
 
 ## The physics, briefly

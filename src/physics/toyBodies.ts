@@ -18,6 +18,9 @@
 //                45 g in all (draft ≈ 1 cm, so it clears a 1.5 cm puddle).
 //                The low centre of mass keeps the tall mast upright
 //                (positive metacentric height).
+//  RC boat       a 20 cm toy speedboat: a V hull 6.5 cm across, 60 g with
+//                its motor and battery. Draft ≈ 1 cm, so it runs aground in
+//                the shallows at the puddle's edge, as a real one would.
 //  Beach donut   toy-sized inflatable ring, 17 cm across, a 2.5 cm vinyl
 //                tube around a 6 cm centre circle, 12 g. Its 740 cm³ of air
 //                make it ride almost on top of the water (draft ~1 mm), so
@@ -26,7 +29,7 @@
 import * as THREE from 'three';
 import type { BodyDef, HullSample } from './rigidbody';
 
-export type ToyKind = 'duck' | 'paperBoat' | 'sailboat' | 'bobber' | 'donut';
+export type ToyKind = 'duck' | 'paperBoat' | 'sailboat' | 'bobber' | 'donut' | 'rcboat';
 
 function voxelize(inside: (p: THREE.Vector3) => boolean, min: THREE.Vector3, max: THREE.Vector3, s: number, com: THREE.Vector3): HullSample[] {
   const out: HullSample[] = [];
@@ -63,17 +66,32 @@ export const SAIL = {
 };
 
 export const BOBBER = { r: 0.012, mass: 0.0036, com: new THREE.Vector3(0, -0.003, 0) };
+export const RCBOAT = { length: 0.2, beam: 0.065, depth: 0.04, mass: 0.06, com: new THREE.Vector3(-0.01, 0.012, 0) };
+/** half-beam of the RC boat's V hull at height y and station x */
+export function rcHalfBeam(x: number, y: number) {
+  const { length: L, beam: B, depth: D } = RCBOAT;
+  if (y < 0 || y > D || Math.abs(x) > L / 2) return -1;
+  const vee = Math.min(1, (y / D) * 1.8 + 0.15);
+  const bow = x > -L * 0.05 ? 1 - Math.pow((x + L * 0.05) / (L * 0.55), 2) : 1;
+  return (B / 2) * vee * Math.max(bow, 0);
+}
 /** torus: centre-circle radius R, tube radius r */
 export const DONUT = { R: 0.06, r: 0.025, mass: 0.012, com: new THREE.Vector3(0, 0.025, 0) };
 
 /** area each toy shows to the wind above the water [m²] (sail + hull side) */
-export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003, donut: 0.0075 };
+export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003, donut: 0.0075, rcboat: 0.004 };
 
 export function bodyDef(kind: ToyKind): BodyDef {
   if (kind === 'bobber') {
     const { r, mass, com } = BOBBER;
     const samples = voxelize((p) => p.length() <= r, new THREE.Vector3(-r, -r, -r), new THREE.Vector3(r, r, r), 0.004, com);
     return { mass, inertia: ellipsoidInertia(mass, r, r, r, 1.5), samples, bottom: -r - com.y, radius: r };
+  }
+  if (kind === 'rcboat') {
+    const { length: L, depth: D, beam: B, mass, com } = RCBOAT;
+    const samples = voxelize((p) => Math.abs(p.z) <= rcHalfBeam(p.x, p.y), new THREE.Vector3(-L / 2, 0, -B / 2), new THREE.Vector3(L / 2, D, B / 2), 0.008, com);
+    const I = new THREE.Vector3((mass / 12) * (B * B + D * D), (mass / 12) * (L * L + B * B), (mass / 12) * (L * L + D * D)).multiplyScalar(1.3);
+    return { mass, inertia: I, samples, bottom: -com.y, radius: L * 0.5 };
   }
   if (kind === 'donut') {
     const { R, r, mass, com } = DONUT;

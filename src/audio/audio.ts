@@ -164,6 +164,36 @@ export class Audio {
     return { peak, rms: Math.sqrt(sum / d.length) };
   }
 
+  private motor: { o: OscillatorNode; o2: OscillatorNode; g: GainNode; f: BiquadFilterNode } | null = null;
+  /** the RC boat's little electric motor: a whine that rises with throttle */
+  setMotor(level: number) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    if (!this.motor) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      const o2 = ctx.createOscillator();
+      o2.type = 'square';
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.Q.value = 2;
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      o.connect(f);
+      o2.connect(f);
+      f.connect(g).connect(this.sfx);
+      o.start();
+      o2.start();
+      this.motor = { o, o2, g, f };
+    }
+    const t = ctx.currentTime;
+    const m = this.motor;
+    m.o.frequency.setTargetAtTime(120 + 520 * level, t, 0.08);
+    m.o2.frequency.setTargetAtTime(60 + 260 * level, t, 0.08);
+    m.f.frequency.setTargetAtTime(500 + 2500 * level, t, 0.08);
+    m.g.gain.setTargetAtTime(level > 0.01 ? 0.015 + 0.05 * level : 0, t, 0.1);
+  }
+
   /** where we are: drives the nature soundscape and the music's mood */
   setScene(s: Scene) {
     this.scene = s;

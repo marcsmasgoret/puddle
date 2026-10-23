@@ -10,7 +10,7 @@ export interface Settings {
   /** slap strength slider, 0…1 */
   strength: number;
   fluid: FluidId;
-  mode: 'slap' | 'skip' | 'fish';
+  mode: 'slap' | 'skip' | 'fish' | 'boat';
   /** best skip count per fluid */
   best: Partial<Record<FluidId, number>>;
   hintsSeen: string[];
@@ -21,6 +21,7 @@ export interface Settings {
   volume: number;
   musicVolume: number;
   muted: boolean;
+  size: 'small' | 'normal' | 'large' | 'huge';
 }
 
 const defaults: Settings = {
@@ -36,6 +37,7 @@ const defaults: Settings = {
   volume: 0.7,
   musicVolume: 0.45,
   muted: false,
+  size: 'normal',
 };
 
 function load(): Settings {

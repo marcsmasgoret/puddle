@@ -354,6 +354,11 @@ export class ShallowWaterSolver {
     this.state.reverse();
   }
 
+  /** Rest depth, signed distance and wet flag per cell (full precision). */
+  get shapeSimTexture(): THREE.Texture {
+    return this.shapeSim;
+  }
+
   /** Current simulation state texture (η, u, v, θ). */
   get stateTexture(): THREE.Texture {
     return this.state[0].texture;

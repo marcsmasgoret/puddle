@@ -104,7 +104,9 @@ export class Engineering {
 
     // overlays
     const oc = el.querySelector('[data-o]')!;
-    const modes: [OverlayMode, string][] = [['off', 'Off'], ['height', 'Height'], ['velocity', 'Velocity'], ['viscosity', 'Strain / μ'], ['forces', 'Forces']];
+    const modes: [OverlayMode, string][] = [
+      ['off', 'Off'], ['height', 'Height'], ['velocity', 'Velocity'], ['vorticity', 'Vorticity'], ['froude', 'Froude'], ['viscosity', 'Strain / μ'], ['forces', 'Forces'],
+    ];
     for (const [m, label] of modes) {
       const b = document.createElement('button');
       b.className = 'ui-chip';
@@ -171,9 +173,13 @@ export class Engineering {
     return this.open;
   }
 
+  /** called when the card opens or closes (to show the graphs with it) */
+  onToggle: (open: boolean) => void = () => {};
+
   toggle(on = !this.open) {
     this.open = on;
     this.el.classList.toggle('open', on);
+    this.onToggle(on);
     if (!on) this.setOverlay('off');
     else {
       this.syncSliders();
@@ -259,6 +265,10 @@ export class Engineering {
             ? r.kind === 'shearThickening'
               ? bar(LEGEND_CSS.viridis, `${sig(r.mu0)} Pa·s`, `${sig(r.muMax)} Pa·s`, 'viscosity μ(γ̇), log')
               : bar(LEGEND_CSS.viridis, '0.1 /s', '1000 /s', 'strain rate γ̇, log')
+            : m === 'vorticity'
+              ? bar(LEGEND_CSS.diverging, '−4 /s', '+4 /s', 'vorticity (spin of the water)')
+            : m === 'froude'
+              ? bar(LEGEND_CSS.viridis, '0', '1.5', 'Froude number; white line: Fr = 1')
             : m === 'forces'
               ? `<div class="eng-keys"><span><i style="background:#b8bcc2"></i>weight</span><span><i style="background:#4aa3e0"></i>buoyancy</span><span><i style="background:#f08a4b"></i>drag</span></div><div class="eng-scale"><span>arrow length ∝ √|F|</span></div>`
               : '';
