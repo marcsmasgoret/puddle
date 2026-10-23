@@ -23,6 +23,7 @@ import {
   limiterFragment,
   impulseFragment,
   surfaceFragment,
+  elasticFragment,
   MAX_IMPULSES,
 } from './swe/shaders';
 import { PressureMap, type Load } from './pressureMap';
@@ -78,6 +79,9 @@ export class ShallowWaterSolver {
   private limiterMat: THREE.ShaderMaterial;
   private impulseMat: THREE.ShaderMaterial;
   private surfaceMat: THREE.ShaderMaterial;
+  private elasticMat: THREE.ShaderMaterial;
+  /** displacement ξ of an elastic gel at the faces (ping-pong) */
+  private xi: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   private pending: Impulse[] = [];
   readonly pressureMap: PressureMap;
   private noIce: THREE.DataTexture;
@@ -108,6 +112,7 @@ export class ShallowWaterSolver {
         generateMipmaps: false,
       });
     this.state = [makeState(), makeState()];
+    this.xi = [makeState(), makeState()];
 
     this.surface = new THREE.WebGLRenderTarget(nx, nz, {
       type: THREE.HalfFloatType,
@@ -163,7 +168,10 @@ export class ShallowWaterSolver {
       uUMax: { value: U_MAX },
       uExtraDamp: { value: 0 },
       uCs: { value: 0.17 },
+      uXi: { value: null },
+      uElastic: { value: 0 },
     });
+    this.elasticMat = mat(elasticFragment, { uXiPrev: { value: null }, uDt: { value: 0 } });
     this.heightMat = mat(heightFragment, { uDt: { value: 0 }, uHMin: { value: H_MIN } });
     this.limiterMat = mat(limiterFragment, { uDt: { value: 0 }, uHMin: { value: H_MIN } });
     this.impulseMat = mat(impulseFragment, {
@@ -215,6 +223,7 @@ export class ShallowWaterSolver {
    */
   updateFluid(f: FluidProperties) {
     this.fluid = f;
+    this.velocityMat.uniforms.uElastic.value = f.rheology.kind === 'elastic' ? f.rheology.G / f.density : 0;
     const r = rheologyUniforms(f);
     for (const m of [this.velocityMat, this.surfaceMat]) {
       m.uniforms.uShearThick.value = r.enabled;
@@ -236,7 +245,7 @@ export class ShallowWaterSolver {
     const prev = this.renderer.getClearColor(new THREE.Color());
     const prevA = this.renderer.getClearAlpha();
     this.renderer.setClearColor(0x000000, 0);
-    for (const t of this.state) {
+    for (const t of [...this.state, ...this.xi]) {
       this.renderer.setRenderTarget(t);
       this.renderer.clear(true, false, false);
     }
@@ -280,7 +289,8 @@ export class ShallowWaterSolver {
       // depth, and with it the wave speed)
       // (viscosity no longer limits dt: friction is implicit and the in-plane
       // viscous term is capped at its own stability limit, see shaders.ts)
-      const plan = planSteps(dtFrame, this.grid.dx, 2 * this.maxDepth, this.gravity, f.surfaceTension / f.density, 0);
+      const elastic = this.velocityMat.uniforms.uElastic.value as number;
+      const plan = planSteps(dtFrame, this.grid.dx, 2 * this.maxDepth, this.gravity, f.surfaceTension / f.density, 0, elastic);
       this.lastPlan = plan;
 
       const vu = this.velocityMat.uniforms;
@@ -290,14 +300,17 @@ export class ShallowWaterSolver {
       vu.uExtraDamp.value = this.extraDamping;
       this.heightMat.uniforms.uDt.value = plan.dt;
       this.limiterMat.uniforms.uDt.value = plan.dt;
+      this.elasticMat.uniforms.uDt.value = plan.dt;
 
       this.pressureMap.set(this.loads);
       this.pressureMap.render(this.renderer, f.density);
       this.applyImpulses();
       for (let n = 0; n < plan.substeps; n++) {
+        vu.uXi.value = this.xi[0].texture;
         this.pass(this.velocityMat);
         this.pass(this.limiterMat);
         this.pass(this.heightMat);
+        if (elastic > 0) this.stepXi();
       }
       this.simTime += plan.dt * plan.substeps;
     }
@@ -320,6 +333,16 @@ export class ShallowWaterSolver {
       u.uCount.value = batch.length;
       this.pass(this.impulseMat);
     }
+  }
+
+  /** ξ ← ξ + Δt u for the gel (reads the new state, writes xi[1], swaps). */
+  private stepXi() {
+    this.elasticMat.uniforms.uState.value = this.state[0].texture;
+    this.elasticMat.uniforms.uXiPrev.value = this.xi[0].texture;
+    this.renderer.setRenderTarget(this.xi[1]);
+    this.quad.material = this.elasticMat;
+    this.quad.render(this.renderer);
+    this.xi.reverse();
   }
 
   /** Run one fullscreen pass: read state[0], write state[1], swap. */
@@ -421,10 +444,11 @@ export class ShallowWaterSolver {
 
   dispose() {
     this.state.forEach((t) => t.dispose());
+    this.xi.forEach((t) => t.dispose());
     this.surface.dispose();
     this.shapeSim.dispose();
     this.shapeTexture.dispose();
-    [this.velocityMat, this.heightMat, this.limiterMat, this.impulseMat, this.surfaceMat].forEach((m) => m.dispose());
+    [this.velocityMat, this.heightMat, this.limiterMat, this.impulseMat, this.surfaceMat, this.elasticMat].forEach((m) => m.dispose());
     this.quad.dispose();
   }
 }

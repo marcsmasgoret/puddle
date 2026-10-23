@@ -46,9 +46,13 @@ export function planSteps(
   g: number,
   sigmaOverRho: number,
   nu: number,
+  /** G/ρ of an elastic gel [m²/s²] (0 for liquids) */
+  elastic = 0,
 ): StepPlan {
   const lambdaMax = 8 / (dx * dx);
-  const omegaMax = Math.sqrt(maxDepth * (g * lambdaMax + sigmaOverRho * lambdaMax * lambdaMax));
+  // gels add the column spring 3(G/ρ)/h² (h floored at 6 mm) and shear waves
+  const omegaEl2 = elastic > 0 ? (3 * elastic) / (0.006 * 0.006) + elastic * lambdaMax : 0;
+  const omegaMax = Math.sqrt(maxDepth * (g * lambdaMax + sigmaOverRho * lambdaMax * lambdaMax) + omegaEl2);
   const wave = 2 / omegaMax;
   const advection = dx / (Math.SQRT2 * U_MAX);
   const viscous = nu > 0 ? (dx * dx) / (4 * nu) : Infinity;

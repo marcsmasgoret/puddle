@@ -22,6 +22,12 @@
 export type Rheology =
   | { kind: 'newtonian' }
   | {
+      /** a soft elastic solid (gel): Kelvin–Voigt, shear modulus G plus viscosity */
+      kind: 'elastic';
+      /** G, shear modulus [Pa] */
+      G: number;
+    }
+  | {
       kind: 'shearThickening';
       /** μ₀, viscosity in the liquid (low-shear) regime [Pa·s] */
       mu0: number;
@@ -54,6 +60,17 @@ export type Optics =
       roughness: number;
     }
   | {
+      /** molten rock: glows by its temperature, skins over with dark crust */
+      kind: 'lava';
+      /** temperature of the exposed melt [K] */
+      temperature: number;
+      /** colour of the cooled crust (linear RGB) */
+      crust: [number, number, number];
+      /** seconds for an undisturbed surface to skin over */
+      crustTime: number;
+      roughness: number;
+    }
+  | {
       kind: 'opaque';
       /** diffuse colour (linear RGB) */
       albedo: [number, number, number];
@@ -65,7 +82,7 @@ export type Optics =
     };
 
 export interface FluidProperties {
-  id: 'water' | 'honey' | 'mercury' | 'oobleck';
+  id: 'water' | 'honey' | 'mercury' | 'oobleck' | 'lava' | 'jello';
   name: string;
   /** ρ, density [kg/m³] */
   density: number;
@@ -228,6 +245,77 @@ export const OOBLECK: FluidProperties = {
 };
 
 /**
+ * Lava: basaltic (Hawaiian pāhoehoe) melt at about 1150 °C.
+ *
+ * - ρ  ≈ 2600 kg/m³      dense basalt melt is ~2700; a little gas lowers it
+ * - μ  ≈ 100 Pa·s        pāhoehoe near the vent is 10²–10³ Pa·s; it stiffens
+ *                        as it cools and crystallises
+ * - σ  ≈ 0.35 N/m        basaltic melts measure 0.30–0.40 N/m
+ *
+ * Optics: hot enough to glow. The colour is blackbody radiation at ~1420 K
+ * (deep orange: by Wien's law the peak is at 2.0 µm, in the infrared; only
+ * the red end reaches the visible). An undisturbed surface radiates and
+ * cools, and a dark glassy crust grows over it in seconds; wherever the melt
+ * moves, the crust tears and the glowing interior shows through.
+ */
+export const LAVA: FluidProperties = {
+  id: 'lava',
+  name: 'Lava',
+  density: 2600,
+  viscosity: 100,
+  surfaceTension: 0.35,
+  rheology: { kind: 'newtonian' },
+  optics: { kind: 'lava', temperature: 1420, crust: [0.035, 0.03, 0.03], crustTime: 2.5, roughness: 0.25 },
+  wetsGround: true,
+  stain: [0.18, 0.16, 0.15],
+  holdable: true,
+  splashes: true,
+  sources: [
+    'Shaw, H. R. et al. (1968). Viscosity, temperature, and stress in molten basalt. Am. J. Sci. 266, 225–264',
+    'Murase, T. & McBirney, A. R. (1973). Properties of some common igneous rocks and their melts at high temperatures. GSA Bull. 84, 3563–3592 (density, surface tension)',
+    'Hon, K. et al. (1994). Emplacement and inflation of pahoehoe sheet flows. GSA Bull. 106, 351–370 (crust growth)',
+  ],
+};
+
+/**
+ * Red jello: a gelatin dessert gel (~3 % gelatin, sugar), a soft elastic
+ * solid rather than a liquid.
+ *
+ * - ρ  ≈ 1050 kg/m³      water plus dissolved sugar
+ * - G  ≈ 1 kPa           shear modulus of a dessert-strength gelatin gel
+ *                        (2–3 wt % gelatin gels measure ~0.3–3 kPa)
+ * - μ  ≈ 0.6 Pa·s        the internal friction that damps its wobble
+ *                        (it settles in about a second)
+ * - n  = 1.34
+ *
+ * Mechanics (a Kelvin–Voigt layer): each column of jello is held to the
+ * bowl like a block of rubber glued to a plate. Sheared sideways by ξ, a
+ * layer of depth h pulls back with a stress 3Gξ/h, so a column wobbles at
+ * ω = √(3G/ρ)/h ≈ 70 rad/s (≈ 11 Hz) in 2.5 cm, and neighbouring columns
+ * are coupled by shear waves at c_s = √(G/ρ) ≈ 1 m/s. Slap it and the whole
+ * puddle jiggles and springs back.
+ *
+ * Optics: clear and deep red (strong green and blue absorption by the dye).
+ */
+export const JELLO: FluidProperties = {
+  id: 'jello',
+  name: 'Red jello',
+  density: 1050,
+  viscosity: 0.6,
+  surfaceTension: 0.05,
+  rheology: { kind: 'elastic', G: 1000 },
+  optics: { kind: 'dielectric', ior: 1.34, absorption: [5, 150, 110], roughness: 0.03 },
+  wetsGround: false,
+  stain: [1, 1, 1],
+  holdable: true,
+  splashes: false,
+  sources: [
+    'Gelatin gel moduli: Djabourov, M. et al. (1988). Gelation of aqueous gelatin solutions. J. Phys. France 49, 333–343',
+    'Elastic layer on a rigid base (shear spring 3G/h): standard result for a thin bonded layer, cf. lubrication analogy',
+  ],
+};
+
+/**
  * Hot-tub water at 38 °C (IAPWS formulations): warmer water is a little
  * less dense, about a third less viscous and has lower surface tension, so
  * its ripples live slightly longer.
@@ -239,7 +327,7 @@ export const HOT_WATER: FluidProperties = {
   surfaceTension: 69.9e-3,
 };
 
-export const FLUIDS = { water: WATER, honey: HONEY, mercury: MERCURY, oobleck: OOBLECK };
+export const FLUIDS = { water: WATER, honey: HONEY, mercury: MERCURY, oobleck: OOBLECK, lava: LAVA, jello: JELLO };
 export type FluidId = keyof typeof FLUIDS;
 
 /** ν = μ/ρ, kinematic viscosity [m²/s]. Momentum diffuses at this rate. */

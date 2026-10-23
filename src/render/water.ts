@@ -64,6 +64,11 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
     uMeniscus: { value: 0 },
     uIce: { value: null as THREE.Texture | null },
     uIceOn: { value: 0 },
+    // lava: crust thickness field, melt temperature, crust colour, clock
+    uCrust: { value: null as THREE.Texture | null },
+    uLavaT: { value: 1420 },
+    uCrustColor: { value: new THREE.Color() },
+    uTime: { value: 0 },
     // recent impacts on a shear-thickening fluid: (x, z, R, strength 0…1)
     uJamMarks: { value: [0, 1, 2, 3].map(() => new THREE.Vector4()) },
   };
@@ -83,8 +88,9 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
       }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uSurface, uShape, uSceneColor, uSceneDepth, uReflection, uIce;
-      uniform float uIceOn;
+      uniform sampler2D uSurface, uShape, uSceneColor, uSceneDepth, uReflection, uIce, uCrust;
+      uniform float uIceOn, uLavaT, uTime;
+      uniform vec3 uCrustColor;
       uniform mat4 projectionMatrix;
       uniform vec2 uOrigin, uExtent, uResolution, uTexel;
       uniform mat4 uReflMatrix;
@@ -122,6 +128,13 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         float NdH = max(dot(n, h), 0.0);
         float d = NdH * NdH * (a2 - 1.0) + 1.0;
         return a2 / (3.14159265 * d * d);
+      }
+      // Blackbody colour of hot rock (linear RGB, normalised to its own
+      // brightness), a fit to Planck's law over 800–1600 K: dull red at
+      // 900 K, orange at 1200 K, yellow-orange at 1500 K.
+      vec3 blackbody(float T) {
+        float t = clamp((T - 800.0) / 800.0, 0.0, 1.0);
+        return vec3(1.0, 0.08 + 0.55 * t * t + 0.1 * t, 0.005 + 0.2 * t * t * t);
       }
       vec2 toScreen(vec3 world) {
         vec4 c = projectionMatrix * viewMatrix * vec4(world, 1.0);
@@ -221,6 +234,37 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           // a film thinner than the scattering length shows the bed through it
           float T = exp(-uExtinction * depth);
           col = mix(body, texture2D(uSceneColor, refrUv).rgb, T) + spec;
+        } else if (uMode == 3) {
+          // ── lava ──
+          float crust = texture2D(uCrust, vUv).r;
+          // the crust breaks into plates; their seams cool last and glow
+          // plates of mixed sizes: big slabs broken into smaller ones here and there
+          vec2 q = vWPos.xz * 11.0 + vec2(vnoise(vWPos.xz * 4.0), vnoise(vWPos.xz * 4.0 + 3.0)) * 1.2;
+          vec3 vc = voronoi(q);
+          vec3 vc2 = voronoi(q * 2.3 + 5.0);
+          float small = step(0.55, vnoise(vWPos.xz * 3.0 + 9.0));
+          float seam = max(smoothstep(0.16, 0.0, vc.y - vc.x), small * smoothstep(0.1, 0.0, vc2.y - vc2.x) * 0.8);
+          // each plate has its own age: some still glow dull red through
+          float plateHot = smoothstep(0.75, 1.0, fract(vc.z * 13.7)) * 0.5;
+          // where the skin is thin, molten rock shows: slowly churning,
+          // brighter (hotter) in the folds
+          float churn = fbm(vWPos.xz * 7.0 + vec2(uTime * 0.05, -uTime * 0.03));
+          float exposed = clamp(1.0 - crust * (1.15 - 0.5 * seam * crust), 0.0, 1.0);
+          exposed = max(exposed, seam * (1.0 - crust) * 1.5);
+          float T = uLavaT - 260.0 * crust - 120.0 * (1.0 - churn);
+          // radiance ∝ T⁴ (Stefan–Boltzmann), relative to 1420 K
+          float I = pow(T / 1420.0, 4.0) * 4.5;
+          vec3 glow = blackbody(T) * I;
+          // the crust: dark glassy basalt, a little ropy, catching the sky
+          vec3 nc = normalize(n + vec3(vnoise(vWPos.xz * 40.0) - 0.5, 0.0, vnoise(vWPos.xz * 40.0 + 7.0) - 0.5) * 0.1);
+          float Fc = fresnel(clamp(dot(nc, V), 0.0, 1.0), 1.55);
+          float Dc = ggx(nc, Hv, 0.35);
+          vec3 crustCol = uCrustColor * (uAmbient * 0.6 + uSunColor * NdL * 0.5) + refl * Fc * 0.3
+                        + uSunColor * min(Dc * geom, 20.0) * NdL * 0.08;
+          // a thin crust still glows dull red from beneath
+          crustCol += blackbody(950.0) * (0.12 * (1.0 - crust) + plateHot * 0.35) * (1.0 - seam);
+          col = mix(crustCol, glow, exposed);
+          edgeBand = 0.002;
         } else {
           // ── dielectric ──
           vec3 transmit = exp(-(uAbsorption + uTurbidity) * L);
@@ -276,6 +320,11 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         u.uTurbidity.value.set(2.0, 2.6, 3.4);
         u.uScatter.value.set('#6f6a4c');
       }
+      // gelatin scatters a little light inside: the soft glow of jello
+      if (f.id === 'jello') {
+        u.uTurbidity.value.set(14, 14, 14);
+        u.uScatter.value.set('#ff2a2a');
+      }
       // honey carries pollen and fine sugar crystals that scatter warm light
       if (f.id === 'honey') {
         u.uTurbidity.value.set(6, 6, 6);
@@ -290,6 +339,12 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
       // rim width ≈ 3 capillary lengths (ℓc ≈ 1.9 mm for mercury), widened
       // slightly so it reads at screen resolution
       u.uMeniscus.value = 0.008;
+    } else if (o.kind === 'lava') {
+      u.uMode.value = 3;
+      u.uLavaT.value = o.temperature;
+      u.uCrustColor.value.setRGB(...o.crust);
+      u.uRoughness.value = o.roughness;
+      u.uIor.value = 1.55;
     } else {
       u.uMode.value = 2;
       u.uAlbedo.value.setRGB(...o.albedo);

@@ -16,6 +16,7 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
       uSkyHorizon: { value: new THREE.Color() },
       uTint: { value: new THREE.Color(1, 1, 1) },
       uMetal: { value: 0 },
+      uEmit: { value: new THREE.Color(0, 0, 0) },
     },
     vertexShader: /* glsl */ `
       varying vec3 vN;
@@ -31,6 +32,7 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
       uniform vec2 uResolution;
       uniform vec3 uSunDir, uSunColor, uSkyTop, uSkyHorizon, uTint;
       uniform float uMetal;
+      uniform vec3 uEmit;
       varying vec3 vN;
       varying vec3 vWPos;
       void main() {
@@ -47,6 +49,7 @@ export function createDropletMesh(drops: Droplets, waterUniforms: Record<string,
         float spec = pow(max(dot(R, uSunDir), 0.0), 400.0) * 6.0;
         // mercury beads: a tiny curved mirror (≈ 78 % reflectance, no refraction)
         vec3 col = uMetal > 0.5 ? sky * 0.78 + uSunColor * spec * 0.78 : mix(refr, sky, F) + uSunColor * spec;
+        col += uEmit;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });

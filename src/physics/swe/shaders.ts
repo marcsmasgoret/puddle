@@ -91,6 +91,12 @@ uniform sampler2D uPressure; // surface pressure p/ρ from fingers and floating 
 uniform sampler2D uIce;      // ice cover 0…1 (winter): a rigid lid where present
 uniform vec2 uWindStress;    // mean wind stress τ/ρ [m²/s²]: τ = ρ_air C_D U²
 uniform float uIceDrag;      // extra damping under ice [1/s]
+// Elastic gel (jello): the sideways displacement ξ of each face's column
+// since rest, and G/ρ. A sheared layer of depth h bonded to the bowl pulls
+// back with a stress 3Gξ/h (per unit mass of the column: 3(G/ρ)ξ/h²), and
+// neighbouring columns pull on each other by shear, (G/ρ)∇²ξ.
+uniform sampler2D uXi;
+uniform float uElastic;      // G/ρ [m²/s²], 0 for liquids
 
 // Discrete Laplacian of η at a cell, ∇²η ≈ (Σ neighbours − 4η)/dx².
 float lapEta(ivec2 c) {
@@ -229,7 +235,16 @@ void main() {
     // depth-averaged flow by τ/(ρh) (zero under ice)
     float iceU = max(texelFetch(uIce, c, 0).r, texelFetch(uIce, W, 0).r);
     float wind = uWindStress.x / max(hFace, uHMin) * (1.0 - iceU);
-    u += uDt * (gravity + pressure + capillary + viscous + wind);
+    float elastic = 0.0;
+    if (uElastic > 0.0) {
+      // (depth floored at 6 mm: thinner edges would only stiffen the step)
+      float he = max(hFace, 0.006);
+      float xi = texelFetch(uXi, c, 0).r;
+      float lapXi = (texelFetch(uXi, c + ivec2(1, 0), 0).r + texelFetch(uXi, W, 0).r
+                   + texelFetch(uXi, c + ivec2(0, 1), 0).r + texelFetch(uXi, Sth, 0).r - 4.0 * xi) / (uDx * uDx);
+      elastic = -3.0 * uElastic / (he * he) * xi + uElastic * lapXi;
+    }
+    u += uDt * (gravity + pressure + capillary + viscous + wind + elastic);
 
     // bottom friction, implicit: (u_new − u)/dt = −c_f u_new  ⇒  u_new = u/(1 + c_f dt).
     // Unconditionally stable even when c_f is huge (honey, jammed oobleck).
@@ -260,7 +275,15 @@ void main() {
 
     float iceV = max(texelFetch(uIce, c, 0).r, texelFetch(uIce, Sth, 0).r);
     float windV = uWindStress.y / max(hFace, uHMin) * (1.0 - iceV);
-    v += uDt * (gravity + pressure + capillary + viscous + windV);
+    float elasticV = 0.0;
+    if (uElastic > 0.0) {
+      float he = max(hFace, 0.006);
+      float xi = texelFetch(uXi, c, 0).g;
+      float lapXi = (texelFetch(uXi, c + ivec2(1, 0), 0).g + texelFetch(uXi, c - ivec2(1, 0), 0).g
+                   + texelFetch(uXi, c + ivec2(0, 1), 0).g + texelFetch(uXi, Sth, 0).g - 4.0 * xi) / (uDx * uDx);
+      elasticV = -3.0 * uElastic / (he * he) * xi + uElastic * lapXi;
+    }
+    v += uDt * (gravity + pressure + capillary + viscous + windV + elasticV);
     v /= 1.0 + uDt * (frictionRate(hFace, nu) + uIceDrag * iceV);
     float sp = length(vec2(uHere, v));
     vNew = sp > uUMax ? v * uUMax / sp : v;
@@ -343,6 +366,22 @@ void main() {
 
   float eta = s.r - uDt / uDx * (fluxR - fluxL + fluxT - fluxB);
   gl_FragColor = vec4(eta, s.gba);
+}
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELASTIC PASS (gels only): the columns' displacement follows the velocity,
+//   ξ ← ξ + Δt u      (after the velocity update: symplectic, like the waves)
+// Closed faces (walls) carry no velocity, so they stay at ξ = 0.
+// ─────────────────────────────────────────────────────────────────────────────
+export const elasticFragment = /* glsl */ `
+${COMMON}
+uniform sampler2D uXiPrev;
+uniform float uDt;
+void main() {
+  ivec2 c = ivec2(gl_FragCoord.xy);
+  vec2 xi = texelFetch(uXiPrev, c, 0).rg + uDt * S(c).gb;
+  gl_FragColor = vec4(xi, 0.0, 1.0);
 }
 `;
 

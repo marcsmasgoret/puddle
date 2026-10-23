@@ -51,7 +51,7 @@ export const GAMMA_EPS = 0.05;
 /** CPU version, used by tests, the engineering plots and the write-up. */
 export function viscosityAt(f: FluidProperties, gammaDot: number): number {
   const r = f.rheology;
-  if (r.kind === 'newtonian') return f.viscosity;
+  if (r.kind !== 'shearThickening') return f.viscosity;
   const thick = r.mu0 * (1 + Math.pow(gammaDot / r.gammaC, r.n - 1));
   return Math.min(r.muMax, thick + r.yieldStress / (gammaDot + GAMMA_EPS));
 }
@@ -59,7 +59,7 @@ export function viscosityAt(f: FluidProperties, gammaDot: number): number {
 /** Uniform values the GPU needs (all divided by ρ: kinematic units). */
 export function rheologyUniforms(f: FluidProperties) {
   const r = f.rheology;
-  if (r.kind === 'newtonian') {
+  if (r.kind !== 'shearThickening') {
     return { enabled: 0, nu0: f.viscosity / f.density, gammaC: 1, n: 1, nuMax: f.viscosity / f.density, tauY: 0 };
   }
   return {

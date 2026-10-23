@@ -3,10 +3,11 @@ import { FLUIDS, HOT_WATER, type FluidId, type FluidProperties } from './physics
 import { makeGrid, pickResolution } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
 import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
-import { pressLoad, type HeldFinger } from './physics/press';
+import { newFinger, stepFinger, liftFinger, fingerDone, type Finger } from './physics/finger';
 import type { Load } from './physics/pressureMap';
 import { computeSlap, handSpeed } from './physics/slap';
 import { stirImpulses } from './physics/stir';
+import type { Impulse as FingerImpulse } from './physics/solver';
 import { Droplets } from './physics/droplets';
 import { WINDAGE } from './physics/toyBodies';
 import { createDropletMesh } from './render/droplets';
@@ -19,6 +20,7 @@ import { Audio, haptic } from './audio/audio';
 import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
 import { AdaptiveQuality } from './render/quality';
+import { LavaCrust } from './render/lavaCrust';
 import { Toys } from './scene/toys';
 import { Stones } from './scene/stones';
 import { Fishing } from './scene/fishing';
@@ -28,7 +30,7 @@ import { settings, saveSettings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
 import { createGroundMaterial, createGround, createBed, applyGroundFluid } from './render/ground';
-import { PuddleRenderer } from './render/pipeline';
+import { PuddleRenderer, LAYER_REFLECT } from './render/pipeline';
 import { frameCamera } from './scene/framing';
 import { attachPointer } from './interaction/pointer';
 import { World } from './scene/world/world';
@@ -59,6 +61,7 @@ let engineering: Engineering | undefined;
 const grid = makeGrid(pickResolution());
 const solver = new ShallowWaterSolver(renderer, buildPuddle(grid), fluid);
 const caustics = new Caustics(solver, 1.333, phoneish ? 1 : 2);
+const lavaCrust = new LavaCrust(renderer, solver);
 
 // ── scene ────────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
@@ -76,6 +79,13 @@ const water = createWaterMesh(solver);
 waterScene.add(water.mesh);
 
 const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
+// molten rock lights up its surroundings (a warm light just above the pool)
+const lavaLight = new THREE.PointLight('#ff6a1f', 0, 6, 1.4);
+lavaLight.position.set(0, 0.35, 0);
+let lavaOn = false;
+lavaLight.intensity = 0; // kept in the scene so switching fluids never recompiles shaders
+lavaLight.layers.enable(LAYER_REFLECT);
+scene.add(lavaLight);
 // unit vector pointing down the sdf gradient (toward the puddle)
 const towardWater = (x: number, z: number): [number, number] => {
   const e = 0.02;
@@ -303,19 +313,35 @@ function slapAt(x: number, z: number) {
 
 attachPointer(canvas, camera, {
   isWater,
-  canHold: () => fluid.holdable,
-  onHoldStart(id, x, z) {
-    held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) });
+  onFingerDown(id, x, z, mode) {
+    const old = fingers.get(id);
+    if (old && !old.up) {
+      old.mode = mode;
+      return;
+    }
+    const f = newFinger(x, z, mode);
+    f.inWater = isWater(x, z);
+    fingers.set(id, f);
+    fingerMoves.delete(id);
   },
-  onHoldMove(id, x, z) {
-    const f = held.get(id);
-    if (!f || !isWater(x, z)) return;
+  onFingerMove(id, x, z, dt) {
+    const f = fingers.get(id);
+    if (!f || f.up) return;
+    const m = fingerMoves.get(id) ?? { x0: f.x, z0: f.z, dt: 0 };
+    m.dt += dt;
+    fingerMoves.set(id, m);
     f.x = x;
     f.z = z;
-    f.depth = Math.max(solver.depthAt(x, z), 0.002);
+    f.inWater = isWater(x, z);
+    const now = performance.now();
+    if (f.inWater && now - lastSwish > 110) {
+      lastSwish = now;
+      audio.stir(Math.hypot(x - m.x0, z - m.z0) / Math.max(m.dt, 1e-3));
+    }
   },
-  onHoldEnd(id) {
-    held.delete(id);
+  onFingerUp(id) {
+    const f = fingers.get(id);
+    if (f) liftFinger(f);
   },
   onPressAnywhere: () => {
     if (!panel.isOpen() && !drawer.isOpen() && !soundCard.isOpen()) return false;
@@ -334,14 +360,6 @@ attachPointer(canvas, camera, {
   onCarryMove: (id, ndc, x, y) => toys.moveCarry(id, ndc, drawer.isOverButton(x, y)),
   onCarryEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onSlap: slapAt,
-  onStir(x0, z0, x1, z1, dt) {
-    const now = performance.now();
-    if (now - lastSwish > 110) {
-      lastSwish = now;
-      audio.stir(Math.hypot(x1 - x0, z1 - z0) / dt);
-    }
-    for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
-  },
 });
 
 let lastSwish = 0;
@@ -411,7 +429,7 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
   drops.fluid = f;
   drops.clear();
   drainBack = 0;
-  held.clear();
+  fingers.clear();
   const o = f.optics;
   caustics.setOptics(o.kind === 'dielectric' ? o.ior : null, o.kind === 'dielectric' ? o.absorption : [0, 0, 0]);
   const ringRough = f.id === 'honey' ? 0.3 : f.id === 'oobleck' ? 0.9 : 0.78;
@@ -423,16 +441,35 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
     const d = 0.006;
     dm.uTint.value.setRGB(...(o.absorption.map((k) => Math.exp(-k * d)) as [number, number, number]));
   } else dm.uTint.value.setRGB(1, 1, 1);
+  // lava: the crust field, glowing drops, and the warm light it throws
+  lavaCrust.enabled = o.kind === 'lava';
+  if (o.kind === 'lava') {
+    lavaCrust.crustTime = o.crustTime;
+    lavaCrust.restart();
+    dm.uTint.value.setRGB(0.05, 0.03, 0.03);
+  }
+  (dm.uEmit.value as THREE.Color).setRGB(...((o.kind === 'lava' ? [3.2, 0.7, 0.08] : [0, 0, 0]) as [number, number, number]));
+  lavaOn = o.kind === 'lava';
+  if (!lavaOn) lavaLight.intensity = 0;
   wetMap.clear(renderer);
   engineering?.fluidChanged();
 }
 
-// fingers held down on honey / oobleck
-const held = new Map<number, HeldFinger>();
+// fingertips in the fluid (physics/finger.ts): poking, pressing, stirring
+const fingers = new Map<number, Finger>();
+const fingerMoves = new Map<number, { x0: number; z0: number; dt: number }>();
 let fingerLoads: Load[] = [];
-function updateHolds(dt: number) {
-  for (const f of held.values()) f.t += dt;
-  fingerLoads = [...held.values()].map((f) => pressLoad(f, fluid.density, gravity));
+function updateFingers(dt: number) {
+  fingerLoads = [];
+  const imps: FingerImpulse[] = [];
+  for (const [id, f] of fingers) {
+    const moved = fingerMoves.get(id) ?? null;
+    fingerMoves.delete(id);
+    const H = Math.max(solver.depthAt(f.x, f.z), 0.002);
+    fingerLoads.push(...stepFinger(f, dt, fluid, gravity, H, moved && moved.dt > 0 ? moved : null, imps, 1.6 * grid.dx));
+    if (fingerDone(f)) fingers.delete(id);
+  }
+  for (const imp of imps) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
 }
 
 let markFluid: (v: FluidId) => void = () => {};
@@ -458,7 +495,7 @@ const soundCard = createSoundButton({
 });
 markFluid = panel.addChoice<FluidId>(
   'Fluid',
-  [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck']],
+  [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck'], ['lava', 'Lava'], ['jello', 'Red jello']],
   () => fluid.id,
   (id) => {
     settings.fluid = id;
@@ -491,7 +528,7 @@ panel.addButtons([
         time: pick(TIMES)[0],
         weather: pick(WEATHERS)[0],
       };
-      const f = pick(['water', 'water', 'honey', 'mercury', 'oobleck'] as FluidId[]);
+      const f = pick(['water', 'water', 'water', 'honey', 'mercury', 'oobleck', 'lava', 'jello'] as FluidId[]);
       settings.fluid = f;
       applyFluid(FLUIDS[f]);
       markFluid(f);
@@ -580,8 +617,9 @@ if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
   setMode,
   flick: (dx: number, dy: number, ms: number, z = 0) => stones.throwFrom({ dx, dy, ms, start: new THREE.Vector3(0, 0, z) }, canvas.clientWidth),
   spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat' | 'donut', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
-  hold: (id: number, x: number, z: number) => held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) }),
-  release: (id: number) => held.delete(id),
+  hold: (id: number, x: number, z: number) => fingers.set(id, newFinger(x, z, 'hold')),
+  release: (id: number) => fingers.get(id) && liftFinger(fingers.get(id)!),
+  fingers,
   stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
   },
@@ -612,7 +650,7 @@ renderer.setAnimationLoop(() => {
   quality.sample(dt);
   fps = fps * 0.95 + (1 / Math.max(dt, 1e-3)) * 0.05;
   maybeDrip(solver.simTime);
-  updateHolds(Math.min(dt, 1 / 20));
+  updateFingers(Math.min(dt, 1 / 20));
   updateJamMarks();
   world.update(Math.min(dt, 1 / 20));
   hotTubJets(Math.min(dt, 1 / 20));
@@ -629,6 +667,10 @@ renderer.setAnimationLoop(() => {
   solver.step(dt);
   wetMap.update(renderer, Math.min(dt, 1 / 20));
   caustics.update(renderer, world.env.sunDir);
+  lavaCrust.update(Math.min(dt, 1 / 20));
+  water.uniforms.uCrust.value = lavaCrust.texture;
+  water.uniforms.uTime.value += dt;
+  if (lavaOn) lavaLight.intensity = 7 + 0.6 * Math.sin(solver.simTime * 2.3) + 0.5 * Math.sin(solver.simTime * 5.1);
   pipeline.render(dt);
   if (engineering!.isOpen) {
     overlay.render(renderer, camera, toys.toys.map((t) => t.body), gravity);

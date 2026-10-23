@@ -241,6 +241,37 @@ export class Audio {
       this.tone(120, 70, 0.45 * s, 0.003, 0.15);
       for (const [f, a] of [[2150, 0.12], [3370, 0.09], [5260, 0.06], [7110, 0.04]]) this.tone(f, f * 0.99, a * s, 0.002, 0.9, 0, 'sine');
       this.splashTail(sprayMl, 0.0012);
+    } else if (fluid === 'lava') {
+      // molten rock: a heavy, slow glorp, a hiss of steam and a crackle of crust
+      this.tone(80, 40, 0.65 * s, 0.015, 0.5);
+      this.burst('lowpass', 380, 1, 0.3 * s, 0.02, 0.5);
+      this.burst('highpass', 3500, 0.6, 0.12 * s, 0.05, 0.9, 0.08);
+      for (let k = 0; k < 5; k++) this.burst('bandpass', 2000 + Math.random() * 3000, 2, 0.06 * s, 0.001, 0.03, 0.1 + Math.random() * 0.5);
+    } else if (fluid === 'jello') {
+      // a gel: a soft slap and a wobbling, springy body (it rings at the
+      // jiggle frequency, ~11 Hz modulating a low thump)
+      this.tone(140, 60, 0.45 * s, 0.003, 0.12);
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(95, t);
+      o.frequency.exponentialRampToValueAtTime(70, t + 0.7);
+      const am = ctx.createOscillator();
+      am.frequency.value = 11;
+      const ag = ctx.createGain();
+      ag.gain.value = 0.5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.3 * s, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+      const mod = ctx.createGain();
+      mod.gain.value = 0.5;
+      am.connect(ag).connect(mod.gain);
+      o.connect(mod).connect(g).connect(this.sfx);
+      for (const x of [o, am]) {
+        x.start(t);
+        x.stop(t + 0.85);
+      }
     } else {
       // oobleck jams: a short, dull thud, nothing else
       this.tone(90, 45, 0.7 * s, 0.002, 0.12);
