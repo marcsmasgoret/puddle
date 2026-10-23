@@ -4,6 +4,7 @@ import { makeGrid, pickResolution } from './physics/grid';
 import { buildPuddle } from './physics/puddleShape';
 import { ShallowWaterSolver, GRAVITY, type Impulse } from './physics/solver';
 import { pressLoad, type HeldFinger } from './physics/press';
+import type { Load } from './physics/pressureMap';
 import { computeSlap, handSpeed } from './physics/slap';
 import { stirImpulses } from './physics/stir';
 import { Droplets } from './physics/droplets';
@@ -11,6 +12,8 @@ import { createDropletMesh } from './render/droplets';
 import { WetMap } from './render/wetmap';
 import { createPanel } from './ui/panel';
 import { createFullscreenButton } from './ui/fullscreen';
+import { createDrawer } from './ui/drawer';
+import { Toys } from './scene/toys';
 import { settings, saveSettings } from './ui/settings';
 import { Caustics } from './render/caustics';
 import { createWaterMesh } from './render/water';
@@ -122,6 +125,40 @@ resize();
 const panel = createPanel();
 createFullscreenButton();
 
+// ── floating toys ────────────────────────────────────────────────────────────
+const toys = new Toys(scene, solver, renderer, camera, {
+  impulse: (imp) => solver.addImpulse(imp),
+  onEntry(_kind, x, z, v, mass, radius) {
+    // a toy landing is a small slap: same impact model, limited to the
+    // momentum the toy actually carries (m·v)
+    if (!isWater(x, z)) return;
+    const hit = computeSlap(v, solver.depthAt(x, z), fluid, GRAVITY, radius * 0.7, mass * v);
+    const launched = hit.sprayMass > 0 ? drops.spray(x, z, hit.radius, hit.sprayMass, hit.sprayMeanSpeed) : 0;
+    solver.addImpulse({ x, z, radius: hit.radius, pressureImpulse: hit.pressureImpulse, volume: -launched });
+  },
+});
+const ndcAt = (cx: number, cy: number) => {
+  const r = canvas.getBoundingClientRect();
+  return new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+};
+const drawer = createDrawer({
+  onDragStart: (kind, id, x, y) => toys.carryNew(id, kind, ndcAt(x, y)),
+  onDragMove: (id, x, y) => toys.moveCarry(id, ndcAt(x, y)),
+  onDragEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
+  onTap(kind) {
+    // drop it from a hand's height somewhere over the water
+    for (let k = 0; k < 30; k++) {
+      const x = (Math.random() * 2 - 1) * shape.halfX * 0.6;
+      const z = (Math.random() * 2 - 1) * shape.halfZ * 0.6;
+      if (solver.sdfAt(x, z) < -0.12) {
+        toys.spawn(kind, new THREE.Vector3(x, 0.3, z));
+        return;
+      }
+    }
+  },
+  onClear: () => toys.clear(),
+});
+
 /**
  * A falling drop of radius r hitting the water at speed v hands its momentum
  * m·v to the surface as a pressure impulse over a footprint a few drop radii
@@ -174,10 +211,14 @@ attachPointer(canvas, camera, {
     held.delete(id);
   },
   onPressAnywhere: () => {
-    if (!panel.isOpen()) return false;
+    if (!panel.isOpen() && !drawer.isOpen()) return false;
     panel.close();
+    drawer.close();
     return true;
   },
+  onPickDown: (id, ndc) => toys.pick(id, ndc),
+  onCarryMove: (id, ndc) => toys.moveCarry(id, ndc),
+  onCarryEnd: (id, x, y) => toys.endCarry(id, drawer.isOverButton(x, y)),
   onSlap: slapAt,
   onStir(x0, z0, x1, z1, dt) {
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
@@ -243,9 +284,10 @@ function applyFluid(f: FluidProperties) {
 
 // fingers held down on honey / oobleck
 const held = new Map<number, HeldFinger>();
+let fingerLoads: Load[] = [];
 function updateHolds(dt: number) {
   for (const f of held.values()) f.t += dt;
-  solver.setPresses([...held.values()].map((f) => pressLoad(f, fluid.density, GRAVITY)));
+  fingerLoads = [...held.values()].map((f) => pressLoad(f, fluid.density, GRAVITY));
 }
 
 panel.addChoice<FluidId>(
@@ -287,6 +329,8 @@ let paused = false;
     return lastSlap;
   },
   setFluid: (id: FluidId) => applyFluid(FLUIDS[id]),
+  toys,
+  spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
   hold: (id: number, x: number, z: number) => held.set(id, { x, z, t: 0, depth: Math.max(solver.depthAt(x, z), 0.002) }),
   release: (id: number) => held.delete(id),
   stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
@@ -304,6 +348,8 @@ renderer.setAnimationLoop(() => {
   maybeDrip(solver.simTime);
   updateHolds(Math.min(dt, 1 / 20));
   updateJamMarks();
+  const toyLoads = toys.update(Math.min(dt, 1 / 20), fluid, GRAVITY);
+  solver.setLoads([...fingerLoads, ...toyLoads]);
   updateDrops(Math.min(dt, 1 / 20));
   solver.step(dt);
   wetMap.update(renderer, Math.min(dt, 1 / 20));

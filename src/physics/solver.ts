@@ -24,8 +24,8 @@ import {
   impulseFragment,
   surfaceFragment,
   MAX_IMPULSES,
-  MAX_PRESSES,
 } from './swe/shaders';
+import { PressureMap, type Load } from './pressureMap';
 
 export const GRAVITY = 9.81; // [m/s²]
 
@@ -50,14 +50,6 @@ export interface Impulse {
   push?: [number, number];
   /** volume added (+) or removed (−) [m³] */
   volume?: number;
-}
-
-/** A finger held down on the surface: steady pressure p [Pa] over radius R. */
-export interface Press {
-  x: number;
-  z: number;
-  radius: number;
-  pressure: number;
 }
 
 export class ShallowWaterSolver {
@@ -87,6 +79,8 @@ export class ShallowWaterSolver {
   private impulseMat: THREE.ShaderMaterial;
   private surfaceMat: THREE.ShaderMaterial;
   private pending: Impulse[] = [];
+  readonly pressureMap: PressureMap;
+  private loads: Load[] = [];
   private maxDepth: number;
 
   constructor(renderer: THREE.WebGLRenderer, shape: PuddleShape, fluid: FluidProperties) {
@@ -95,6 +89,7 @@ export class ShallowWaterSolver {
     this.grid = shape.grid;
     this.fluid = fluid;
     const { nx, nz } = this.grid;
+    this.pressureMap = new PressureMap(nx, nz, this.origin, this.extent);
 
     // Full 32-bit floats for the simulation state where the GPU can render to
     // them (needed for millimetre-scale heights accumulating tiny updates);
@@ -155,9 +150,7 @@ export class ShallowWaterSolver {
       uDt: { value: 0 },
       uG: { value: this.gravity },
       uSigmaRho: { value: 0 },
-      uOrigin: { value: new THREE.Vector2(-DOMAIN_X / 2, -DOMAIN_Z / 2) },
-      uPressCount: { value: 0 },
-      uPress: { value: Array.from({ length: MAX_PRESSES }, () => new THREE.Vector4()) },
+      uPressure: { value: this.pressureMap.target.texture },
       ...this.rheoUniforms(),
       uOmegaRef: { value: OMEGA_REF },
       uHMin: { value: H_MIN },
@@ -212,12 +205,9 @@ export class ShallowWaterSolver {
     this.pending.length = 0;
   }
 
-  /** Fingers currently held on the surface (up to MAX_PRESSES). */
-  setPresses(presses: Press[]) {
-    const u = this.velocityMat.uniforms;
-    const list = presses.slice(0, MAX_PRESSES);
-    list.forEach((p, k) => (u.uPress.value[k] as THREE.Vector4).set(p.x, p.z, p.radius, p.pressure / this.fluid.density));
-    u.uPressCount.value = list.length;
+  /** Pressure loads on the surface this frame (held fingers, floating bodies). */
+  setLoads(loads: Load[]) {
+    this.loads = loads;
   }
 
   /** Queue a slap / push; applied at the start of the next step. */
@@ -245,6 +235,8 @@ export class ShallowWaterSolver {
       this.heightMat.uniforms.uDt.value = plan.dt;
       this.limiterMat.uniforms.uDt.value = plan.dt;
 
+      this.pressureMap.set(this.loads);
+      this.pressureMap.render(this.renderer, f.density);
       this.applyImpulses();
       for (let n = 0; n < plan.substeps; n++) {
         this.pass(this.velocityMat);
@@ -281,6 +273,11 @@ export class ShallowWaterSolver {
     this.quad.material = material;
     this.quad.render(this.renderer);
     this.state.reverse();
+  }
+
+  /** Current simulation state texture (η, u, v, θ). */
+  get stateTexture(): THREE.Texture {
+    return this.state[0].texture;
   }
 
   /** World xz of the grid's corner, and the grid's size in metres. */

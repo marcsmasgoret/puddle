@@ -18,12 +18,16 @@ export interface PointerHandlers {
   onHoldEnd(id: number): void;
   /** return true to swallow the press (e.g. it closed a menu) */
   onPressAnywhere?(): boolean;
+  /** return true if the press picked up an object (then it is carried) */
+  onPickDown?(id: number, ndc: THREE.Vector2): boolean;
+  onCarryMove?(id: number, ndc: THREE.Vector2): void;
+  onCarryEnd?(id: number, clientX: number, clientY: number): void;
 }
 
 const HOLD_DELAY = 160; // ms
 const MOVE_SLOP = 10; // px
 
-type State = 'pending' | 'stir' | 'hold';
+type State = 'pending' | 'stir' | 'hold' | 'carry';
 interface Finger {
   x: number;
   z: number;
@@ -40,10 +44,12 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
   const hit = new THREE.Vector3();
   const fingers = new Map<number, Finger>();
 
-  const toWorld = (e: PointerEvent): THREE.Vector3 | null => {
+  const toNdc = (e: PointerEvent) => {
     const r = canvas.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
+    return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  };
+  const toWorld = (e: PointerEvent): THREE.Vector3 | null => {
+    ray.setFromCamera(toNdc(e), camera);
     return ray.ray.intersectPlane(plane, hit) ? hit : null;
   };
 
@@ -51,6 +57,10 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
     e.preventDefault();
     if (h.onPressAnywhere?.()) return;
     canvas.setPointerCapture(e.pointerId);
+    if (h.onPickDown?.(e.pointerId, toNdc(e))) {
+      fingers.set(e.pointerId, { x: 0, z: 0, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'carry' });
+      return;
+    }
     const p = toWorld(e);
     if (!p) return;
     const f: Finger = { x: p.x, z: p.z, t: e.timeStamp, sx: e.clientX, sy: e.clientY, state: 'stir' };
@@ -71,6 +81,10 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
   canvas.addEventListener('pointermove', (e) => {
     const f = fingers.get(e.pointerId);
     if (!f) return;
+    if (f.state === 'carry') {
+      h.onCarryMove?.(e.pointerId, toNdc(e));
+      return;
+    }
     if (f.state === 'pending' && Math.hypot(e.clientX - f.sx, e.clientY - f.sy) > MOVE_SLOP) {
       f.state = 'stir';
       clearTimeout(f.timer);
@@ -95,6 +109,7 @@ export function attachPointer(canvas: HTMLCanvasElement, camera: THREE.Camera, h
     clearTimeout(f.timer);
     if (f.state === 'pending') h.onSlap(f.x, f.z);
     if (f.state === 'hold') h.onHoldEnd(e.pointerId);
+    if (f.state === 'carry') h.onCarryEnd?.(e.pointerId, e.clientX, e.clientY);
     fingers.delete(e.pointerId);
   };
   canvas.addEventListener('pointerup', end);

@@ -2,7 +2,7 @@
 // Fluid properties
 //
 // The simulation runs in real SI units at real size (the puddle really is
-// ~2 m across and ~1.5 cm deep), so every property below goes into the
+// ~2 m across and ~2.5 cm deep), so every property below goes into the
 // equations exactly as measured. There is no hidden "fudge" scaling: the only
 // mapping between the real world and the simulation is the grid spacing dx
 // (see grid.ts), which sets the shortest wave the grid can represent.
@@ -95,7 +95,7 @@ export interface FluidProperties {
  * - n  = 1.333
  *
  * Absorption (Pope & Fry 1997): a(650 nm) = 0.340 /m, a(550) = 0.0565 /m,
- * a(450) = 0.00922 /m. Through 1.5 cm that is invisible, so a real puddle's
+ * a(450) = 0.00922 /m. Through 2.5 cm that is invisible, so a real puddle's
  * tint comes mostly from fine sediment; that is added separately in the
  * renderer and labelled as a scene choice.
  */
@@ -132,7 +132,7 @@ export const WATER: FluidProperties = {
  *
  * Absorption: honey's colour comes from strong blue absorption by
  * polyphenols and Maillard products. The coefficients are estimated to give
- * a light golden honey in a 1.5 cm layer (transmits ~89 % red, ~59 % green,
+ * a light golden honey in a 2.5 cm layer (transmits ~88 % red, ~59 % green,
  * ~9 % blue); this is a colour choice within the natural range (water-white
  * to dark amber), not a single measured sample.
  */
@@ -143,7 +143,7 @@ export const HONEY: FluidProperties = {
   viscosity: 7.4,
   surfaceTension: 63e-3,
   rheology: { kind: 'newtonian' },
-  optics: { kind: 'dielectric', ior: 1.49, absorption: [8, 35, 160], roughness: 0.035 },
+  optics: { kind: 'dielectric', ior: 1.49, absorption: [5, 21, 96], roughness: 0.035 },
   wetsGround: true,
   stain: [0.62, 0.42, 0.16],
   holdable: true,

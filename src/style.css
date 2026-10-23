@@ -142,3 +142,41 @@ body {
 .ui-buttons { display: flex; gap: 8px; }
 .ui-action { flex: 1; }
 .ui-button-2 { right: calc(66px + env(safe-area-inset-right)); }
+
+/* ── toy drawer ─────────────────────────────────────────────────────────── */
+.ui-drawer-button { right: auto; left: calc(14px + env(safe-area-inset-left)); top: auto; bottom: calc(14px + env(safe-area-inset-bottom)); }
+.ui-tray {
+  position: fixed;
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(66px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 10px 40px rgba(30, 40, 50, 0.18);
+  opacity: 0;
+  transform: translateX(-12px);
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  z-index: 10;
+}
+.ui-tray.open { opacity: 1; transform: none; pointer-events: auto; }
+.ui-toy {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.22);
+  cursor: grab;
+  touch-action: none;
+  transition: transform 0.15s, background 0.15s;
+}
+.ui-toy:hover { transform: scale(1.06); background: rgba(255, 255, 255, 0.34); }
+.ui-tray-clear { font-size: 12px; padding: 4px 10px; }

@@ -76,8 +76,6 @@ void main() {
 // ─────────────────────────────────────────────────────────────────────────────
 // VELOCITY PASS
 // ─────────────────────────────────────────────────────────────────────────────
-export const MAX_PRESSES = 4;
-
 export const velocityFragment = /* glsl */ `
 ${COMMON}
 ${RHEOLOGY_GLSL}
@@ -89,9 +87,7 @@ uniform float uHMin;      // smallest depth used in friction [m]
 uniform float uUMax;      // velocity safety clamp [m/s]
 uniform float uExtraDamp; // optional extra linear damping [1/s] (engineering slider)
 uniform float uCs;        // Smagorinsky constant (≈ 0.17)
-uniform vec2 uOrigin;     // world xz of the grid corner
-uniform int uPressCount;
-uniform vec4 uPress[${MAX_PRESSES}]; // held fingers: (x, z, R, p₀/ρ)
+uniform sampler2D uPressure; // surface pressure p/ρ from fingers and floating bodies (pressureMap.ts)
 
 // Discrete Laplacian of η at a cell, ∇²η ≈ (Σ neighbours − 4η)/dx².
 float lapEta(ivec2 c) {
@@ -101,18 +97,9 @@ float lapEta(ivec2 c) {
   return s / (uDx * uDx);
 }
 
-// Surface pressure from fingers pressing into the fluid, p/ρ at a cell.
-// A steady pressure p pushes the surface down until ρ g Δη balances it.
-float pressAt(ivec2 c) {
-  vec2 x = uOrigin + (vec2(c) + 0.5) * uDx;
-  float p = 0.0;
-  for (int k = 0; k < ${MAX_PRESSES}; k++) {
-    if (k >= uPressCount) break;
-    vec2 d = x - uPress[k].xy;
-    p += uPress[k].w * exp(-dot(d, d) / (uPress[k].z * uPress[k].z));
-  }
-  return p;
-}
+// Surface pressure p/ρ at a cell. A steady pressure p pushes the surface
+// down until ρ g Δη balances it.
+float pressAt(ivec2 c) { return inGrid(c) ? texelFetch(uPressure, c, 0).r : 0.0; }
 
 // Bilinear sample of the u component at a point p in grid coordinates.
 // u(i-½,j) lives at (i, j+½), so shift by (0, ½) before interpolating.

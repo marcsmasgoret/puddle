@@ -1,0 +1,98 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Physical definitions of the floating toys
+//
+// Dimensions and masses are those of the real objects. Each hull is turned
+// into sample volumes by voxelising an inside-test on a regular grid; every
+// voxel inside the hull becomes a HullSample of volume s³. The body frame's
+// origin is the centre of mass.
+//
+//  Rubber duck   9 cm long, 25 g hollow vinyl with a flat base. Mean density
+//                of its envelope ≈ 0.1 g/cm³ (25 g in ~240 cm³), so it floats
+//                very high: in water it sinks about 7 mm, in mercury well under
+//                a millimetre.
+//  Paper boat    12 cm folded from A5 printer paper (80 g/m² × 0.031 m²
+//                ≈ 2.5 g) → 3 g. Almost weightless: rides on its fold line.
+//  Toy sailboat  16 cm light wooden hull with a lead strip along the bottom,
+//                45 g in all (draft ≈ 1 cm, so it clears a 1.5 cm puddle).
+//                The low centre of mass keeps the tall mast upright
+//                (positive metacentric height).
+// ─────────────────────────────────────────────────────────────────────────────
+import * as THREE from 'three';
+import type { BodyDef, HullSample } from './rigidbody';
+
+export type ToyKind = 'duck' | 'paperBoat' | 'sailboat';
+
+function voxelize(inside: (p: THREE.Vector3) => boolean, min: THREE.Vector3, max: THREE.Vector3, s: number, com: THREE.Vector3): HullSample[] {
+  const out: HullSample[] = [];
+  const p = new THREE.Vector3();
+  for (let x = min.x + s / 2; x < max.x; x += s)
+    for (let y = min.y + s / 2; y < max.y; y += s)
+      for (let z = min.z + s / 2; z < max.z; z += s) {
+        p.set(x, y, z);
+        if (inside(p)) out.push({ p: p.clone().sub(com), dV: s * s * s, h: s });
+      }
+  return out;
+}
+
+/** Inertia of a solid ellipsoid with semi-axes (a, b, c), scaled for a hollow shell. */
+function ellipsoidInertia(m: number, a: number, b: number, c: number, shell = 1) {
+  return new THREE.Vector3((m / 5) * (b * b + c * c), (m / 5) * (a * a + c * c), (m / 5) * (a * a + b * b)).multiplyScalar(shell);
+}
+
+// model-space shapes are shared with the visual models (scene/toyModels.ts)
+export const DUCK = {
+  body: { c: new THREE.Vector3(0, 0.03, 0), r: new THREE.Vector3(0.045, 0.03, 0.035) },
+  head: { c: new THREE.Vector3(0.027, 0.07, 0), r: 0.023 },
+  /** the bottom of the body is flattened at this height (a stable base) */
+  base: 0.007,
+  com: new THREE.Vector3(0, 0.028, 0),
+  mass: 0.025,
+};
+export const PAPER = { length: 0.12, keel: 0.07, width: 0.05, hull: 0.026, com: new THREE.Vector3(0, 0.009, 0), mass: 0.003 };
+export const SAIL = {
+  hull: { c: new THREE.Vector3(0, 0.026, 0), r: new THREE.Vector3(0.08, 0.026, 0.032) },
+  mast: 0.19,
+  com: new THREE.Vector3(0, 0.012, 0),
+  mass: 0.045,
+};
+
+export function bodyDef(kind: ToyKind): BodyDef {
+  if (kind === 'duck') {
+    const { body, head, com, mass } = DUCK;
+    const inside = (p: THREE.Vector3) => {
+      if (p.y < DUCK.base) return false;
+      const q = p.clone().sub(body.c).divide(body.r);
+      return q.lengthSq() <= 1 || p.distanceTo(head.c) <= head.r;
+    };
+    const samples = voxelize(inside, new THREE.Vector3(-0.05, DUCK.base, -0.04), new THREE.Vector3(0.055, 0.095, 0.04), 0.008, com);
+    // hollow: most mass in the skin, so ~1.5× a solid body's inertia
+    return { mass, inertia: ellipsoidInertia(mass, 0.045, 0.04, 0.035, 1.5), samples, bottom: DUCK.base - com.y, radius: 0.045 };
+  }
+  if (kind === 'paperBoat') {
+    const { length, keel, width, hull, com, mass } = PAPER;
+    // folded hull: a flat folded base ~3 cm wide flaring out to the rim,
+    // with raked ends. The wide base gives it a positive metacentric
+    // height (BM = I_waterplane / V ≈ 5 cm ≫ the 9 mm centre of mass)
+    const inside = (p: THREE.Vector3) => {
+      if (p.y < 0 || p.y > hull) return false;
+      const t = p.y / hull;
+      const halfLen = (keel + (length - keel) * t) / 2;
+      const halfW = (width / 2) * Math.min(1, 0.6 + 0.6 * t);
+      return Math.abs(p.x) <= halfLen && Math.abs(p.z) <= halfW;
+    };
+    const samples = voxelize(inside, new THREE.Vector3(-0.06, 0, -0.025), new THREE.Vector3(0.06, hull, 0.025), 0.006, com);
+    const I = new THREE.Vector3((mass / 12) * (width ** 2 + hull ** 2), (mass / 12) * (length ** 2 + width ** 2), (mass / 12) * (length ** 2 + hull ** 2));
+    return { mass, inertia: I.multiplyScalar(1.6), samples, bottom: -com.y, radius: 0.055 };
+  }
+  const { hull, com, mass } = SAIL;
+  const inside = (p: THREE.Vector3) => {
+    if (p.y > hull.c.y) return false; // the hull is the lower half of an ellipsoid
+    return p.clone().sub(hull.c).divide(hull.r).lengthSq() <= 1;
+  };
+  const samples = voxelize(inside, new THREE.Vector3(-0.08, 0, -0.032), new THREE.Vector3(0.08, 0.026, 0.032), 0.01, com);
+  // hull plus a mast: the mast adds to pitch/roll inertia
+  const I = ellipsoidInertia(mass, 0.08, 0.026, 0.032);
+  I.x += 0.004 * (SAIL.mast * SAIL.mast) / 3;
+  I.z += 0.004 * (SAIL.mast * SAIL.mast) / 3;
+  return { mass, inertia: I, samples, bottom: -com.y, radius: 0.07 };
+}

@@ -68,10 +68,21 @@ export interface SlapResult {
   froudeRequested: number;
 }
 
-export function computeSlap(V: number, localDepth: number, fluid: FluidProperties, g: number): SlapResult {
-  const a = HAND_RADIUS;
+/**
+ * radius: impactor radius (a hand by default). maxMomentum: a light object
+ * (a toy dropped in) can't hand over more momentum than it carries, m·V.
+ */
+export function computeSlap(
+  V: number,
+  localDepth: number,
+  fluid: FluidProperties,
+  g: number,
+  radius = HAND_RADIUS,
+  maxMomentum = Infinity,
+): SlapResult {
+  const a = radius;
   const rho = fluid.density;
-  const J = (4 / 3) * rho * a ** 3 * V;
+  const J = Math.min((4 / 3) * rho * a ** 3 * V, maxMomentum);
   const Pi0 = J / (Math.PI * a * a);
   const duMax = Math.sqrt(2 / Math.E) * Pi0 / (rho * a);
   const c = Math.sqrt(g * Math.max(localDepth, 0.002));

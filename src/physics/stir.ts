@@ -15,7 +15,7 @@
 // behind it (a trough), which is what a real finger does.
 //
 // A nice consequence of shallow-water physics: if the finger moves faster
-// than the wave speed c = √(gH) (≈ 0.38 m/s in 1.5 cm of water), the
+// than the wave speed c = √(gH) (≈ 0.5 m/s in 2.5 cm of water), the
 // disturbances it makes can't outrun it and pile up into a V-shaped wake with
 // half-angle sin α = c / U_f — exactly the Mach cone of a supersonic jet.
 // Slower than c and there is no V, just a spreading bulge.

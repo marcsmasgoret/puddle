@@ -39,8 +39,12 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Deepest point of the bowl [m]: every fluid fills the same 1.5 cm bowl. */
-export const BOWL_DEPTH = 0.015;
+/**
+ * Deepest point of the bowl [m]: every fluid fills the same 2.5 cm bowl, a
+ * generous puddle deep enough for toys to float freely (a rubber duck draws
+ * about 7 mm, the toy sailboat about 1 cm).
+ */
+export const BOWL_DEPTH = 0.025;
 
 export function buildPuddle(grid: Grid, restDepth = BOWL_DEPTH, seed = 7): PuddleShape {
   const rand = mulberry32(seed);
