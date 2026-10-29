@@ -199,6 +199,15 @@ export class Audio {
     m.g.gain.setTargetAtTime(level > 0.01 ? 0.015 + 0.05 * level : 0, t, 0.1);
   }
 
+  /**
+   * Thunder for a lightning strike `distance` m away. Light arrives at once,
+   * sound at 343 m/s, so the thunder rolls in d / 343 s after the flash.
+   */
+  thunder(distance: number, pan: number) {
+    if (!this.ctx || !this.nature) return;
+    this.nature.thunder(this.ctx.currentTime + distance / 343, distance, pan);
+  }
+
   /** where we are: drives the nature soundscape and the music's mood */
   setScene(s: Scene) {
     this.scene = s;

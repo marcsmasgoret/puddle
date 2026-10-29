@@ -148,6 +148,9 @@ const world = new World(
       audio.setScene({ ...world.config, hotTub: on });
       if (on) toast('the pool is a hot tub for the winter <small>· 38 °C</small>', 3500);
     },
+    onLightning(distance, azimuth) {
+      audio.thunder(distance, Math.max(-0.8, Math.min(0.8, Math.sin(azimuth) * 1.4)));
+    },
   },
   { location: settings.location, season: settings.season, time: settings.time, weather: settings.weather },
   phoneish,
@@ -561,7 +564,7 @@ const soundCard = createSoundButton({
 });
 markFluid = panel.addChoice<FluidId>(
   'Fluid',
-  [['water', 'Water'], ['honey', 'Honey'], ['chocolate', 'Chocolate sauce'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck'], ['lava', 'Lava'], ['jello', 'Red jello']],
+  [['water', 'Water'], ['honey', 'Honey'], ['chocolate', 'Chocolate'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck'], ['lava', 'Lava'], ['jello', 'Jello']],
   () => fluid.id,
   (id) => {
     settings.fluid = id;
@@ -733,6 +736,8 @@ if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
   audio,
   mouse: (chase: boolean) => world.mouseCat.trigger(chase),
   renderer,
+  /** draw one frame while paused (for screenshots) */
+  renderFrame: () => pipeline.render(0),
   printsMax: () => {
     const t = world.prints.target;
     const buf = new Uint16Array(t.width * t.height * 4);
@@ -758,7 +763,7 @@ renderer.setAnimationLoop(() => {
   maybeDrip(solver.simTime);
   updateFingers(Math.min(dt, 1 / 20));
   updateJamMarks();
-  world.update(Math.min(dt, 1 / 20));
+  world.update(Math.min(dt, 1 / 20), camera);
   hotTubJets(Math.min(dt, 1 / 20));
   water.uniforms.uIce.value = world.ice.texture;
   water.uniforms.uIceOn.value = world.ice.enabled ? 1 : 0;

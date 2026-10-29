@@ -304,7 +304,7 @@ export const LAVA: FluidProperties = {
  */
 export const JELLO: FluidProperties = {
   id: 'jello',
-  name: 'Red jello',
+  name: 'Jello',
   density: 1050,
   viscosity: 0.6,
   surfaceTension: 0.05,
@@ -351,7 +351,7 @@ export const HOT_WATER: FluidProperties = {
  */
 export const CHOCOLATE: FluidProperties = {
   id: 'chocolate',
-  name: 'Chocolate sauce',
+  name: 'Chocolate',
   density: 1300,
   viscosity: 2,
   surfaceTension: 0.06,

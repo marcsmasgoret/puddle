@@ -122,7 +122,7 @@ At $\Delta x = 4.5$ mm in water the capillary term dominates: $\Delta t \approx 
 
 The simulation runs in real SI units at real size, so no hidden scaling is applied anywhere. The only link between reality and the simulation is the grid spacing: ripples shorter than about $2\Delta x$ cannot be represented.
 
-| | Water (20 °C) | Honey | Chocolate sauce | Mercury | Oobleck | Lava | Red jello |
+| | Water (20 °C) | Honey | Chocolate | Mercury | Oobleck | Lava | Jello |
 |---|---|---|---|---|---|---|---|
 | Density $\rho$ (kg/m³) | 998.21 | 1420 | ≈ 1300 | 13 534 | ≈ 1260 | ≈ 2600 | ≈ 1050 |
 | Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | ≈ 2 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) | ≈ 100 | 0.6 (internal damping) |
@@ -133,7 +133,7 @@ The simulation runs in real SI units at real size, so no hidden scaling is appli
 **Sources:**
 - Water: IAPWS R1-76(2014), IAPWS 2008, IAPWS-95; Pope & Fry 1997.
 - Honey: mean of commercial honeys at 20 °C, Newtonian (Yanniotis et al. 2006). Its viscosity ranges from ~2 to ~60 Pa·s with water content (Lazaridou et al. 2004).
-- Chocolate sauce: density and index from sucrose-solution tables (~65 wt %); viscosity and surface tension are estimates for a thick commercial syrup, which is mildly shear-thinning but close to Newtonian at puddle shear rates.
+- Chocolate: density and index from sucrose-solution tables (~65 wt %); viscosity and surface tension are estimates for a thick commercial syrup, which is mildly shear-thinning but close to Newtonian at puddle shear rates.
 - Mercury: Inagaki, Arakawa & Williams 1981.
 - Oobleck: a starch volume fraction of 0.44 after Fall et al. 2012.
 - Lava: basaltic (pāhoehoe) melt near 1150 °C; Shaw et al. 1968, Murase & McBirney 1973.
@@ -174,7 +174,7 @@ $$\dot\gamma = \sqrt{(3|\bar{\mathbf u}|/h)^2 + |S|^2}$$
 - Pulled out quickly, it jams: the hole keeps its shape for about 0.4 s, then the suspension relaxes and the hole oozes shut over a second or so. It never clings to the finger the way honey does.
 - When oobleck is hit it goes matte for a moment: the jammed grains poke through the surface (dilatancy). The renderer shows this, including a jammed patch that spreads wider than the impactor (Waitukaitis & Jaeger 2012).
 
-### 4.2 Red jello: an elastic gel
+### 4.2 Jello: an elastic gel
 
 Jello is not a liquid but a soft solid, so the layer gets one more field: the sideways displacement $\boldsymbol\xi$ of each column since rest, updated alongside the velocity ($\dot{\boldsymbol\xi} = \mathbf u$, after the velocity pass, so the scheme stays symplectic). A layer of depth $h$ bonded to the bowl and sheared by $\xi$ pulls back like a block of rubber glued to a plate, with stress $3G\xi/h$ (the elastic twin of the Poiseuille friction $3\mu\bar u/h$). Neighbouring columns are coupled by shear, $(G/\rho)\nabla^2\boldsymbol\xi$. The momentum equation gains
 

@@ -1,6 +1,6 @@
 // The world: which location, season, time of day and weather, and
 // everything that follows from them (scenery, lighting, ground, the puddle's
-// shape, weather, leaves, ice, the hot tub).
+// shape, weather and lightning, leaves, ice, the hot tub).
 import * as THREE from 'three';
 import { buildPuddle } from '../../physics/puddleShape';
 import type { ShallowWaterSolver } from '../../physics/solver';
@@ -10,6 +10,7 @@ import { loaders, type LocationDef, type LocationId, type BuiltLocation } from '
 import { makeMood, type Season, type TimeOfDay, type Weather } from './palettes';
 import { sway, type Waters, type Trunk } from './props';
 import { WeatherSystem } from './weather';
+import { Lightning } from './lightning';
 import { Leaves } from './leaves';
 import { Ice } from './ice';
 import { MouseCat } from '../animals/mouseCat';
@@ -36,6 +37,8 @@ export interface WorldHooks {
   onShapeChanged(): void;
   /** hot tub on/off */
   onHotTub(on: boolean): void;
+  /** lightning struck `distance` m away, `azimuth` rad right of straight ahead */
+  onLightning(distance: number, azimuth: number): void;
   groundMaterials: THREE.Material[];
 }
 
@@ -43,6 +46,7 @@ export class World {
   config: WorldConfig;
   readonly env: Environment;
   readonly weather: WeatherSystem;
+  readonly lightning: Lightning;
   readonly leaves: Leaves;
   readonly ice: Ice;
   readonly prints = new Prints();
@@ -71,6 +75,7 @@ export class World {
     this.env = new Environment(renderer, scene, makeMood(initial.time, initial.weather, initial.season), phone ? 1024 : 2048);
     const bounds = { get halfX() { return solver.shape.halfX; }, get halfZ() { return solver.shape.halfZ; } };
     this.weather = new WeatherSystem(scene, bounds, (x, z) => solver.sdfAt(x, z) < 0, onRaindrop, phone);
+    this.lightning = new Lightning(scene, this.env, (s) => hooks.onLightning(s.distance, s.azimuth));
     this.leaves = new Leaves(scene, renderer, solver);
     this.ice = new Ice(renderer, solver);
     waters.time = this.time;
@@ -160,6 +165,7 @@ export class World {
 
     // weather, leaves, ice, hot tub
     this.weather.set(c.weather);
+    this.lightning.enabled = c.weather === 'rain';
     sway.strength.value = c.weather === 'wind' ? 0.012 : c.weather === 'rain' ? 0.005 : 0.002;
     this.leaves.setActive(c.season === 'autumn');
     const hot = !!def.hotTub?.(c.season);
@@ -206,12 +212,13 @@ export class World {
   private trunks: Trunk[] = [];
   private critterKey = '';
 
-  update(dt: number) {
+  update(dt: number, camera: THREE.Camera) {
     this.time.value += dt;
     sway.time.value = this.time.value;
     this.env.update(this.time.value);
     this.built?.update?.(this.time.value, dt);
     this.weather.update(dt);
+    this.lightning.update(dt, camera);
     this.solver.setWind(this.weather.wind.x, this.weather.wind.y);
     this.leaves.update(dt, this.time.value, this.weather.wind);
     this.ice.update(dt);

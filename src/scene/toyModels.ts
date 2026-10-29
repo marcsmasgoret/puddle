@@ -166,7 +166,7 @@ function donut() {
   return { geo, mat, com: DONUT.com };
 }
 
-/** RC speedboat: white V hull with a red stripe, a tinted windscreen, a little flag. */
+/** RC speedboat: white V hull with a red stripe, a closed transom with an outboard, a tinted windscreen, a little flag. */
 function rcboat() {
   const { length: L, depth: D } = RCBOAT;
   // hull: lofted from the same half-beam function as the physics hull
@@ -195,6 +195,18 @@ function rcboat() {
     for (const v of [a, c, b, a, d, c]) pos.push(...v);
     for (let k = 0; k < 6; k++) col.push(0.85, 0.83, 0.8);
   }
+  // keel: the narrow flat strip where the two sides meet underneath
+  for (let i = 0; i < nx; i++) {
+    const a = P(i, 0, -1), b = P(i + 1, 0, -1), c = P(i + 1, 0, 1), d = P(i, 0, 1);
+    for (const v of [a, b, c, a, c, d]) pos.push(...v);
+    for (let k = 0; k < 6; k++) col.push(...blue.toArray());
+  }
+  // transom: the flat stern panel, banded like the sides
+  for (let j = 0; j < ny; j++) {
+    const a = P(0, j, -1), b = P(0, j, 1), c = P(0, j + 1, 1), d = P(0, j + 1, -1);
+    for (const v of [a, b, c, a, c, d]) pos.push(...v);
+    for (let k = 0; k < 6; k++) col.push(...C(j).toArray());
+  }
   const hull = new THREE.BufferGeometry();
   hull.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   hull.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -208,12 +220,19 @@ function rcboat() {
   pole.translate(-0.085, D + 0.025, 0);
   const flag = new THREE.PlaneGeometry(0.02, 0.012);
   flag.translate(-0.095, D + 0.044, 0);
+  // a little outboard motor hung on the transom: cowling and leg
+  const cowl = new THREE.BoxGeometry(0.014, 0.016, 0.016);
+  cowl.translate(-L / 2 - 0.006, D + 0.004, 0);
+  const leg = new THREE.BoxGeometry(0.006, 0.03, 0.006);
+  leg.translate(-L / 2 - 0.006, D - 0.017, 0);
   const geo = mergeGeometries([
     hull,
     tinted(cabin, '#e9e6df'),
     tinted(screen, '#26394a'),
     tinted(pole, '#333'),
     tinted(flag, '#d1322a'),
+    tinted(cowl, '#2a2c31'),
+    tinted(leg, '#3a3d44'),
   ].map((g) => {
     if (g.attributes.uv) g.deleteAttribute('uv');
     return g.index ? g.toNonIndexed() : g;

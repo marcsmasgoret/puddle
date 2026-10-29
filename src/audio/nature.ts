@@ -77,7 +77,7 @@ type Voice =
   | 'robin' | 'chickadee' | 'whiteThroat' | 'cardinal' | 'dove' | 'crow' | 'jay' | 'gull' | 'geese'
   | 'loonWail' | 'loonTremolo' | 'hornedOwl' | 'barredOwl' | 'woodpecker' | 'peepers' | 'bullfrog'
   | 'crickets' | 'wolf' | 'chimes' | 'car' | 'streetcar' | 'shipHorn' | 'heritageHorn'
-  | 'drip' | 'fishJump' | 'thunder'
+  | 'drip' | 'fishJump'
   | 'thrush' | 'wren' | 'warbler' | 'goldfinch' | 'redwing' | 'houseSparrow' | 'pigeon' | 'mallard' | 'gullCall'
   | 'loonYodel' | 'chorus' | 'wave' | 'lap'
   | 'woodThrush' | 'veery' | 'swainson' | 'ovenbird' | 'vireo' | 'songSparrow' | 'oriole' | 'houseFinch'
@@ -153,7 +153,7 @@ const LOUD = new Set<Voice>([
 /** everything that isn't a bird (it skips the birdsong bus) */
 const NOT_BIRD = new Set<Voice>([
   'peepers', 'bullfrog', 'crickets', 'wolf', 'chimes', 'car', 'streetcar', 'shipHorn', 'heritageHorn', 'drip',
-  'fishJump', 'thunder', 'wave', 'lap',
+  'fishJump', 'wave', 'lap',
 ]);
 
 /** What you would hear in this place, season, time and weather. */
@@ -199,7 +199,6 @@ export function planFor(s: Scene): Plan {
     beds.rain = 0.3;
     beds.wind = 0.1;
     v.drip = 6;
-    v.thunder = 0.25;
   }
   if (weather === 'snow') beds.wind = 0.06; // snow hushes everything
 
@@ -429,6 +428,7 @@ export class Nature {
   private noiseBurst(t: number, type: BiquadFilterType, f: number, q: number, peak: number, a: number, r: number, out: AudioNode) {
     const s = this.ctx.createBufferSource();
     s.buffer = this.noise;
+    s.loop = true; // long rumbles outlast the 2 s noise buffer
     const bf = this.ctx.createBiquadFilter();
     bf.type = type;
     bf.frequency.value = f;
@@ -521,7 +521,6 @@ export class Nature {
       case 'heritageHorn': return this.heritageHorn(t);
       case 'drip': return this.drip(t);
       case 'fishJump': return this.fishJump(t);
-      case 'thunder': return this.thunder(t);
       case 'crickets': return;
       case 'thrush': return this.thrush(t);
       case 'wren': return this.wren(t);
@@ -909,10 +908,30 @@ export class Nature {
     this.whistle(t + 0.01, [[0, 420], [0.06, 560]], 0.02, out, 0);
   }
 
-  thunder(t: number) {
-    const out = this.place(1, rand(-0.7, 0.7), 0.6);
-    this.noiseBurst(t, 'lowpass', 120, 0.7, 0.2, 0.4, 5, out);
-    this.noiseBurst(t + 0.6, 'lowpass', 70, 0.7, 0.2, 0.8, 4, out);
+  /**
+   * Thunder from a strike `distance` m away, arriving at time t (the
+   * lightning module fires it at the flash; the caller adds d / 343 s).
+   * Near: a tearing crack from the closest part of the channel, crackles,
+   * then the rumble as sound from farther along the kilometres-long channel
+   * keeps arriving. Far: only a low, slow rumble, the highs absorbed by the
+   * air on the way.
+   */
+  thunder(t: number, distance = 3000, pan = rand(-0.7, 0.7)) {
+    const near = Math.max(0, Math.min(1, (2500 - distance) / 1700)); // 1 within 800 m, 0 past 2.5 km
+    const loud = Math.min(1, 1200 / distance);
+    const out = this.place(0.3 + 0.7 * (1 - near), pan, 0.6);
+    if (near > 0) {
+      this.noiseBurst(t, 'highpass', 900, 0.5, 0.25 * near * loud, 0.005, 0.35, out);
+      for (let k = 0; k < 14; k++) this.noiseBurst(t + rand(0, 0.5), 'bandpass', rand(600, 3000), 1.5, 0.08 * near * loud, 0.002, rand(0.03, 0.09), out);
+    }
+    let tt = t + 0.05 + (1 - near) * 0.3;
+    const swells = 4 + Math.floor(Math.random() * 4);
+    for (let k = 0; k < swells; k++) {
+      this.noiseBurst(tt, 'lowpass', rand(70, 160) + 200 * near, 0.8, rand(0.2, 0.35) * (0.5 + 0.5 * loud), rand(0.15, 0.6), rand(1.5, 3.2), out);
+      tt += rand(0.3, 1.1);
+    }
+    // the low boom under it all
+    this.noiseBurst(t, 'lowpass', 55, 0.7, 0.4 * loud, 0.4, 4, out);
   }
   // ── birdsong ─────────────────────────────────────────────────────────────
   /**
