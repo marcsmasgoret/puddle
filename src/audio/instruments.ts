@@ -15,7 +15,8 @@
 //             modes (≈2.76× and 5.40×, a clamped bar), fast attack.
 //  bell       FM with a non-integer ratio (3.5): a celesta / glockenspiel.
 //  flute      a near-sine with a little breath noise and delayed vibrato.
-//  pad        three detuned saws through a slowly breathing lowpass: strings.
+//  pad        three detuned saws spread across the stereo field, through a
+//             slowly breathing lowpass: strings.
 //  bass       a round sine-triangle bass.
 //  sleigh     a few jingles: short high resonances on noise.
 //  shaker     a shaken seed pod: a short burst of highpassed noise.
@@ -256,16 +257,23 @@ export class Instruments {
     lfo.connect(lg).connect(lp.frequency);
     lp.connect(g).connect(out);
     const stop = t + dur + release + 0.1;
+    // the three detuned voices spread left, centre and right: a wide section
+    const sides = [-0.6, 0, 0.6].map((pan) => {
+      const p = ctx.createStereoPanner();
+      p.pan.value = pan;
+      p.connect(lp);
+      return p;
+    });
     for (const m of notes) {
-      for (const det of [-7, 0, 7]) {
+      [-7, 0, 7].forEach((det, k) => {
         const o = ctx.createOscillator();
         o.type = 'sawtooth';
         o.frequency.value = midiHz(m);
         o.detune.value = det + (Math.random() - 0.5) * 3;
-        o.connect(lp);
+        o.connect(sides[k]);
         o.start(t);
         o.stop(stop);
-      }
+      });
     }
     lfo.start(t);
     lfo.stop(stop);

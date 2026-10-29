@@ -1,48 +1,65 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Nature sounds: a soundscape for every place, season, time of day and
-// weather, synthesised live. Each animal call is modelled on the real one:
+// weather, synthesised live. Birds lead; wind is only a faint bed under them.
+// Every place has its own birds, each call modelled on the real song:
 //
-//   hermit thrush         the forest's finest: a held flute-like note, then a
-//                          shimmering cascade, two voices at once (the
-//                          syrinx has two sides), each phrase at a new pitch
+//  Forest (Ontario hardwoods)
+//   wood thrush           "ee-oh-LAY… trrrl": low pickups, a liquid flute
+//                          phrase, then a shimmering two-voiced trill
+//   veery                 a breezy spiral falling in pitch, two voices beating
+//   ovenbird              "teacher TEACHER TEACHER", growing louder
+//   red-eyed vireo        "here I am… where are you…", short phrases, all day
+//  Algonquin and the cottage
+//   hermit thrush         a held flute note, then a shimmering cascade, each
+//                          phrase at a new pitch (two syrinx sides at once)
+//   white-throated sparrow "oh sweet Canada Canada Canada"; sometimes the
+//                          newer "Cana-Cana" doublets spreading east from BC
+//   Swainson's thrush     an upward spiral of rolled flute notes
 //   winter wren           a long bubbling run of rapid notes and trills
-//   warbler               "sweet sweet sweet, I'm so sweet": quick high chips
-//   goldfinch             twittering "po-ta-to-chip" in bouncing flight
-//   red-winged blackbird  "conk-la-reeee" from the reeds by ponds and lakes
-//   house sparrow, pigeon the city's chirps and soft coos
-//   mallard               quacks on the park pond
-//   herring gull          the long call: a squeal and a run of "ha-ha-ha"s
-//   chorus                a constant hush of distant birds of the place
-//   robin                 caroling phrases of slurred whistles, 2–3 kHz
-//   black-capped chickadee "fee-bee": two pure whistles, ~4.0 then ~3.4 kHz
-//   white-throated sparrow "oh sweet Canada Canada Canada": a long low
-//                          whistle, a higher one, then triplets
-//   northern cardinal     "birdy birdy birdy": steep downslurs, 4 → 2 kHz
-//   mourning dove         "coo-OO-oo-oo-oo", soft and low (~500 Hz)
-//   crow, blue jay        harsh nasal caws / jeers (buzzy, formant-filtered)
-//   gull                  "kee-ow" descending squeals
-//   Canada geese          nasal two-tone honks from a passing flock
-//   common loon           the wail (a slow rise and hold), the tremolo
-//                          (a wavering laugh); echoing across the lake
-//   owls                  great horned "hoo h'hoo hoo hoo"; barred owl
-//                          "who cooks for you" in Algonquin
-//   woodpecker            drumming: ~20 knocks in a second, slowing
-//   spring peepers        rising "peep"s, a chorus near water in spring
-//   bullfrog              "jug-o-rum", low and buzzy, summer lakes at night
-//   crickets              chirping at a rate set by the air temperature
-//                          (Dolbear's law: chirps/min ≈ 4 (T[°F] − 40))
-//   cicadas               a high buzzing swell on hot summer days
-//   wolves                a distant howl on Algonquin nights
-//   wind chimes           tuned tubes struck by gusts (cottage, backyard)
-//   breaking waves        each wave a crash and a long hiss as it runs up
-//                          the sand; wavelets slapping the dock at the cottage
-//   city                  traffic hush, passing cars, a streetcar bell
-//   Lions Gate            surf, gulls, a ship's horn; at noon, the
-//                          Canada Place horns play the first notes of
-//                          "O Canada" across the harbour
+//   junco / pine warbler  a level musical trill
+//   belted kingfisher     a dry rattle flying along the shore
+//   raven                 deep hollow "kronk"s
+//   whip-poor-will        "WHIP-poor-WILL" on and on through summer nights
+//   common loon           wail, tremolo and yodel, echoing across the lake
+//  High Park, backyard, city (Toronto)
+//   robin                 "cheerily, cheer-up, cheerio": slurred whistle groups
+//   northern cardinal     slow "cheer"s, then quick "birdy birdy birdy"
+//   Baltimore oriole      rich, unhurried whistles, like a person whistling
+//   song sparrow          "maids maids maids, put on your tea-kettle-ettle"
+//   house finch           a long cheerful jumble, ending on a burry slur
+//   house wren            a short bubbly cascade
+//   red-winged blackbird  "conk-la-reeee" from the reeds
+//   goldfinch, warbler    "po-ta-to-chip"; "sweet sweet I'm so sweet"
+//   starling, sparrows,   wolf-whistles and clicks; chirps; soft coos
+//   pigeons, chimney swifts chittering over the rooftops at dusk
+//  Lions Gate (Vancouver)
+//   varied thrush         one long eerie burry whistle, then silence, then
+//                          another at a new pitch: wet coastal forest in winter
+//   bald eagle            a surprisingly thin, high "kleek-kik-ik-ik"
+//   glaucous-winged gulls, northwestern crows, Pacific wren, song sparrow
+//  PEI dunes
+//   piping plover         soft, mellow "peep-lo" whistles from the sand
+//   common tern           a harsh "kee-arrr" over the surf
+//   savannah sparrow      "tsit tsit tsit tseeee-tsaay" from the marram grass
+//  Beach (Mediterranean)
+//   Eurasian blackbird    low, unhurried fluting, ending in a quiet twitter
+//   nightingale           the night's virtuoso: crescendos, "chook"s, trills
+//   scops owl             a soft sonar-like "tyuu" every couple of seconds
+//   common swifts         screaming parties racing over the rooftops
+//   serin, European robin a glassy jingle; thin wistful winter cascades
+//   collared dove         "coo-COOO-cook" from the rooftops
+//
+//  and the rest of the place: a far-off chorus of its small birds, crows
+//  and jays, Canada geese, owls, woodpeckers drumming, spring peepers,
+//  bullfrogs, crickets (chirp rate from the air temperature, Dolbear's law:
+//  chirps/min ≈ 4 (T[°F] − 40)), cicadas, wolves, wind chimes, breaking
+//  waves, wavelets on the dock, city traffic and the streetcar, a ship's
+//  horn and, at noon at Lions Gate, the Canada Place horns playing the
+//  first notes of "O Canada" across the harbour.
 //
 // Every event is placed in stereo at a random bearing and distance (farther
-// = quieter and duller) and shares the scene reverb.
+// = quieter and duller). Birds sing into their own bus with the echo of the
+// place (tree trunks, a far shore, buildings) and share the scene reverb.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { Season, TimeOfDay, Weather } from '../scene/world/palettes';
 import type { LocationId } from '../scene/world/location';
@@ -57,12 +74,16 @@ export interface Scene {
 
 type Bed = 'wind' | 'surf' | 'lapping' | 'traffic' | 'rain' | 'fire' | 'bubbles' | 'rustle' | 'cicadas';
 type Voice =
-  | 'robin' | 'chickadee' | 'sparrow' | 'cardinal' | 'dove' | 'crow' | 'jay' | 'gull' | 'geese'
+  | 'robin' | 'chickadee' | 'whiteThroat' | 'cardinal' | 'dove' | 'crow' | 'jay' | 'gull' | 'geese'
   | 'loonWail' | 'loonTremolo' | 'hornedOwl' | 'barredOwl' | 'woodpecker' | 'peepers' | 'bullfrog'
-  | 'crickets' | 'wolf' | 'chimes' | 'car' | 'streetcar' | 'shipHorn' | 'heritageHorn' | 'crackle'
+  | 'crickets' | 'wolf' | 'chimes' | 'car' | 'streetcar' | 'shipHorn' | 'heritageHorn'
   | 'drip' | 'fishJump' | 'thunder'
   | 'thrush' | 'wren' | 'warbler' | 'goldfinch' | 'redwing' | 'houseSparrow' | 'pigeon' | 'mallard' | 'gullCall'
-  | 'loonYodel' | 'chorus' | 'wave' | 'lap';
+  | 'loonYodel' | 'chorus' | 'wave' | 'lap'
+  | 'woodThrush' | 'veery' | 'swainson' | 'ovenbird' | 'vireo' | 'songSparrow' | 'oriole' | 'houseFinch'
+  | 'houseWren' | 'starling' | 'nuthatch' | 'junco' | 'kingfisher' | 'raven' | 'eagle' | 'variedThrush'
+  | 'plover' | 'tern' | 'savannah' | 'blackbird' | 'nightingale' | 'scopsOwl' | 'swift' | 'serin'
+  | 'collaredDove' | 'euroRobin' | 'whippoorwill';
 
 interface Plan {
   beds: Partial<Record<Bed, number>>;
@@ -72,7 +93,68 @@ interface Plan {
   temperature: number;
   /** the small birds heard far off in the background chorus */
   chorus: Voice[];
+  /** the echo that birdsong carries here: delay [s] and level */
+  echo: [number, number];
 }
+
+type Rates = Partial<Record<Voice, number>>;
+
+interface NoteOpts {
+  /** where the swell peaks, as a fraction of the note */
+  atk?: number;
+  /** trill rate [Hz] and depth (× f) */
+  trill?: number;
+  depth?: number;
+  /** the other side of the syrinx: frequency ratio and level */
+  second?: number;
+  level?: number;
+  /** 2nd harmonic level */
+  harm?: number;
+}
+
+/** the birds of each place in the breeding season [calls/min in full song] */
+const SONG: Record<LocationId, Rates> = {
+  forest: { woodThrush: 2, veery: 1.4, ovenbird: 1.3, vireo: 1.6, thrush: 0.8, wren: 0.8, warbler: 0.9, robin: 0.8, chickadee: 1, woodpecker: 0.6 },
+  algonquin: { thrush: 2.4, whiteThroat: 2.2, swainson: 1.1, wren: 1.2, ovenbird: 1, vireo: 1.2, junco: 0.8, chickadee: 1, raven: 0.4, woodpecker: 0.5 },
+  dock: { whiteThroat: 1.6, vireo: 1.4, thrush: 1, songSparrow: 1, junco: 0.7, warbler: 0.8, goldfinch: 0.8, chickadee: 0.9, kingfisher: 0.5 },
+  highpark: { robin: 2, cardinal: 1.4, oriole: 1.4, songSparrow: 1.3, redwing: 1.6, warbler: 1, houseWren: 0.8, goldfinch: 0.8, woodThrush: 0.5, dove: 0.6, mallard: 1.2 },
+  backyard: { robin: 2.2, cardinal: 1.6, houseFinch: 1.6, songSparrow: 1, dove: 0.8, goldfinch: 1, chickadee: 0.8, houseWren: 0.8, oriole: 0.4 },
+  city: { houseSparrow: 3, starling: 1.6, houseFinch: 1.2, pigeon: 1.5, robin: 1, cardinal: 0.6, gull: 0.5 },
+  lionsgate: { gull: 4, gullCall: 1.4, songSparrow: 1.4, swainson: 1.4, wren: 0.8, robin: 1, crow: 0.8, eagle: 0.35, variedThrush: 0.4 },
+  beach: { gull: 3, gullCall: 1.2, plover: 2, tern: 1.6, savannah: 1.6, songSparrow: 1 },
+  europe: { blackbird: 2, serin: 1, goldfinch: 1, collaredDove: 0.8, gull: 2, gullCall: 0.6, houseSparrow: 1, euroRobin: 0.6 },
+};
+
+/** who is still singing or calling in winter */
+const WINTER: Record<LocationId, Rates> = {
+  forest: { chickadee: 2.2, nuthatch: 1, jay: 0.7, crow: 0.6, woodpecker: 0.5 },
+  algonquin: { chickadee: 2, nuthatch: 0.8, jay: 0.5, raven: 0.7, woodpecker: 0.4 },
+  dock: { chickadee: 2, nuthatch: 0.8, jay: 0.6, crow: 0.6, raven: 0.3 },
+  highpark: { chickadee: 1.4, cardinal: 1, nuthatch: 0.8, jay: 0.7, mallard: 0.8, crow: 0.6 },
+  backyard: { chickadee: 1.6, cardinal: 1, jay: 0.6, houseFinch: 0.6, nuthatch: 0.5 },
+  city: { houseSparrow: 2, pigeon: 1.4, starling: 0.8, crow: 1, gull: 0.4 },
+  lionsgate: { variedThrush: 1.2, gull: 4, gullCall: 1, crow: 1, songSparrow: 0.6, eagle: 0.5, chickadee: 0.8 },
+  beach: { gull: 2.5, gullCall: 0.8, crow: 0.8 },
+  europe: { euroRobin: 1.4, blackbird: 0.8, gull: 2, collaredDove: 0.8, serin: 0.4, houseSparrow: 1 },
+};
+
+/** residents and calls that carry on after the breeding season */
+const RESIDENT = new Set<Voice>([
+  'chickadee', 'nuthatch', 'jay', 'crow', 'raven', 'gull', 'gullCall', 'pigeon', 'houseSparrow', 'mallard',
+  'kingfisher', 'starling', 'eagle', 'euroRobin', 'collaredDove', 'woodpecker', 'dove',
+]);
+/** the evening singers: thrushes and blackbirds are at their best at dusk */
+const DUSK = new Set<Voice>(['thrush', 'woodThrush', 'veery', 'swainson', 'robin', 'blackbird', 'whiteThroat']);
+/** big or harsh voices, kept out of the far-off background chorus */
+const LOUD = new Set<Voice>([
+  'gull', 'gullCall', 'crow', 'raven', 'jay', 'eagle', 'mallard', 'pigeon', 'woodpecker', 'kingfisher', 'tern',
+  'dove', 'collaredDove',
+]);
+/** everything that isn't a bird (it skips the birdsong bus) */
+const NOT_BIRD = new Set<Voice>([
+  'peepers', 'bullfrog', 'crickets', 'wolf', 'chimes', 'car', 'streetcar', 'shipHorn', 'heritageHorn', 'drip',
+  'fishJump', 'thunder', 'wave', 'lap',
+]);
 
 /** What you would hear in this place, season, time and weather. */
 export function planFor(s: Scene): Plan {
@@ -83,7 +165,8 @@ export function planFor(s: Scene): Plan {
   const wet = lake || L === 'highpark';
   const shore = L === 'beach' || L === 'lionsgate' || L === 'europe';
   const leafy = L !== 'city' && !shore;
-  const beds: Plan['beds'] = { wind: 0.1 };
+  // wind is only a faint bed: the birds should carry the scene
+  const beds: Plan['beds'] = { wind: 0.035 };
   const v: Plan['voices'] = {};
   const temperature = { spring: 12, summer: 22, autumn: 11, winter: -6 }[season] + (night ? -5 : day ? 3 : 0);
 
@@ -106,61 +189,42 @@ export function planFor(s: Scene): Plan {
   if (L === 'city') beds.traffic = night ? 0.15 : 0.25;
   if (L === 'algonquin') beds.fire = night ? 0.55 : dusk ? 0.4 : 0.2;
   if (L === 'backyard' && s.hotTub) beds.bubbles = 0.6;
-  if (leafy && !winter) beds.rustle = 0.12;
-  if (L === 'europe' && !winter) beds.rustle = 0.15; // palm fronds clattering softly
+  if (leafy && !winter) beds.rustle = 0.03;
+  if (L === 'europe' && !winter) beds.rustle = 0.04; // palm fronds clattering softly
   if (weather === 'wind') {
-    beds.wind = 0.65;
-    if (leafy && !winter) beds.rustle = 0.45;
+    beds.wind = 0.3;
+    if (leafy && !winter) beds.rustle = 0.15;
   }
   if (weather === 'rain') {
     beds.rain = 0.3;
-    beds.wind = 0.25;
+    beds.wind = 0.1;
     v.drip = 6;
     v.thunder = 0.25;
   }
-  if (weather === 'snow') beds.wind = 0.16; // snow hushes everything
+  if (weather === 'snow') beds.wind = 0.06; // snow hushes everything
 
   // ── birds
-  const birdy = weather === 'rain' ? 0.25 : weather === 'snow' ? 0.4 : weather === 'wind' ? 0.6 : 1;
-  const chorus = dawn ? 2.2 : day ? 1 : dusk ? 0.9 : 0;
+  const birdy = weather === 'rain' ? 0.35 : weather === 'snow' ? 0.5 : weather === 'wind' ? 0.7 : 1;
+  const tf = dawn ? 2 : day ? 1 : dusk ? 0.9 : 0;
   const small: Voice[] = [];
-  if (chorus > 0 && !winter) {
-    const k = chorus * birdy;
-    // the forest at its best: thrushes, wrens and warblers singing all round
-    if (L === 'forest' || L === 'algonquin') {
-      v.thrush = 3 * k * (autumn ? 0.3 : 1);
-      v.wren = 1.4 * k * (autumn ? 0.3 : 1);
-      v.warbler = 2.5 * k * (autumn ? 0.2 : 1);
-      small.push('warbler', 'wren', 'chickadee', 'goldfinch', 'robin');
+  if (tf > 0) {
+    for (const [name, r] of Object.entries(winter ? WINTER[L] : SONG[L]) as [Voice, number][]) {
+      let k = r * birdy * tf;
+      if (!RESIDENT.has(name)) k *= autumn ? 0.25 : spring ? 1.15 : 1;
+      if (dusk && DUSK.has(name)) k *= 2.2;
+      v[name] = k;
+      if (!LOUD.has(name)) small.push(name);
     }
-    if (L === 'dock' || L === 'highpark' || L === 'backyard') {
-      v.goldfinch = 1.4 * k;
-      v.warbler = (L === 'dock' ? 1.2 : 0.6) * k * (autumn ? 0.2 : 1);
-      small.push('goldfinch', 'warbler', 'chickadee', 'robin');
+    if (autumn && leafy) {
+      v.jay = 0.7 * birdy;
+      v.nuthatch = 0.6 * birdy;
+      small.push('nuthatch');
     }
-    if ((L === 'highpark' || L === 'dock') && (spring || summer)) v.redwing = 1.8 * k;
-    if (L === 'highpark') v.mallard = 1.2 * birdy;
-    if (L === 'city') {
-      v.houseSparrow = 3 * k;
-      v.pigeon = 1.5 * birdy;
-      small.push('houseSparrow');
-    }
-    if (leafy || L === 'city') v.robin = (L === 'city' ? 1.2 : 2.5) * k * (autumn ? 0.3 : 1);
-    if (L === 'forest' || L === 'algonquin' || L === 'highpark') v.sparrow = 1.6 * k * (autumn ? 0.4 : 1);
-    if (L === 'backyard' || L === 'highpark' || L === 'city') v.cardinal = 1.4 * k;
-    if ((dawn || day) && (L === 'backyard' || L === 'highpark' || L === 'city')) v.dove = 0.8 * k;
-    if (L === 'forest' || L === 'algonquin') v.woodpecker = day ? 0.7 * birdy : 0.25;
+    if (small.length) v.chorus = (winter ? 8 : autumn ? 14 : 34) * birdy * (dawn ? 1.6 : 1);
+    // swifts screaming over the rooftops on summer evenings
+    if (summer && !dawn && (L === 'europe' || L === 'city')) v.swift = (dusk ? 2 : 0.6) * birdy;
+    if ((autumn || spring) && L !== 'city' && L !== 'europe') v.geese = 0.35;
   }
-  if (!night && leafy) v.chickadee = (winter ? 2.2 : 1) * birdy;
-  if (!night && (L === 'city' || L === 'forest' || winter)) v.crow = (winter ? 1.2 : 0.6) * birdy;
-  if (!night && (autumn || winter) && leafy) v.jay = 0.7 * birdy;
-  if (!night && shore) {
-    v.gull = 5 * birdy;
-    v.gullCall = 1.8 * birdy;
-  }
-  if (!night && (winter ? leafy : small.length)) v.chorus = (winter ? 8 : 45) * birdy * (dawn ? 1.5 : 1);
-  if (winter && leafy) small.push('chickadee');
-  if (!night && (autumn || spring) && L !== 'city') v.geese = 0.35;
 
   // ── lake life
   if (lake && !winter) {
@@ -179,13 +243,19 @@ export function planFor(s: Scene): Plan {
       v.barredOwl = 0.7;
       v.wolf = winter ? 0.3 : 0.15;
     }
+    if ((L === 'dock' || L === 'algonquin' || L === 'forest') && (spring || summer)) v.whippoorwill = 0.8;
+    if (L === 'europe' && !winter) {
+      v.scopsOwl = 1.2;
+      if (spring || summer) v.nightingale = 2.2;
+    }
   }
+  if (L === 'europe' && dawn && (spring || summer)) v.nightingale = 1.5;
   if ((night || dusk) && !winter) {
     if (summer || autumn) v.crickets = (summer ? 60 : 30) * (L === 'city' ? 0.3 : 1);
     if (spring && wet) v.peepers = 40;
     if (summer && lake) v.bullfrog = 2;
   }
-  if (summer && day && (L === 'backyard' || L === 'highpark' || L === 'city' || L === 'forest')) beds.cicadas = 0.25;
+  if (summer && day && (L === 'backyard' || L === 'highpark' || L === 'city' || L === 'forest' || L === 'europe')) beds.cicadas = 0.25;
   // warm nights on the beach: crickets in the dune grass behind the palms
   if (L === 'europe' && night && !winter) v.crickets = 40;
 
@@ -199,8 +269,15 @@ export function planFor(s: Scene): Plan {
     if (day) v.heritageHorn = 0.06;
   }
   if ((L === 'dock' || L === 'backyard') && weather !== 'rain') v.chimes = weather === 'wind' ? 5 : 1.2;
-  if (L === 'algonquin') v.crackle = beds.fire ? 0 : 0;
-  return { beds, voices: v, temperature, chorus: small };
+
+  // the echo birdsong carries: tree trunks, the far shore, buildings, open sand
+  const echo: [number, number] =
+    L === 'forest' || L === 'algonquin' ? [0.21, 0.22]
+    : L === 'dock' ? [0.34, 0.16]
+    : L === 'city' ? [0.09, 0.18]
+    : shore ? [0.25, 0.05]
+    : [0.14, 0.12];
+  return { beds, voices: v, temperature, chorus: small, echo };
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
@@ -212,6 +289,12 @@ export class Nature {
   private cricketPhase = 0;
   /** calls placed at least this far away (the background chorus) */
   private distFloor = 0;
+  /** birds sing into their own bus: louder than the beds, with an echo */
+  private birds: GainNode;
+  private echo: DelayNode;
+  private echoWet: GainNode;
+  /** where the call being placed goes (the bird bus or the plain mix) */
+  private dest: AudioNode;
 
   constructor(
     private ctx: AudioContext,
@@ -219,11 +302,34 @@ export class Nature {
     private out: AudioNode,
     /** long echo across open water (loons, wolves, horns) */
     private far: AudioNode,
-  ) {}
+  ) {
+    this.dest = out;
+    this.birds = ctx.createGain();
+    this.birds.gain.value = 1.5;
+    this.birds.connect(out);
+    // a single soft repeat, darker each time round: song coming back off
+    // tree trunks, the far shore or the buildings across the street
+    this.echo = ctx.createDelay(1);
+    this.echo.delayTime.value = 0.2;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 3200;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.3;
+    this.echoWet = ctx.createGain();
+    this.echoWet.gain.value = 0.15;
+    const spread = ctx.createStereoPanner();
+    spread.pan.value = -0.35;
+    this.birds.connect(this.echo);
+    this.echo.connect(lp).connect(fb).connect(this.echo);
+    lp.connect(this.echoWet).connect(spread).connect(out);
+  }
 
   setScene(s: Scene) {
     this.plan = planFor(s);
     const t = this.ctx.currentTime;
+    this.echo.delayTime.setTargetAtTime(this.plan.echo[0], t, 0.5);
+    this.echoWet.gain.setTargetAtTime(this.plan.echo[1], t, 0.5);
     const all: Bed[] = ['wind', 'surf', 'lapping', 'traffic', 'rain', 'fire', 'bubbles', 'rustle', 'cicadas'];
     for (const b of all) {
       const level = this.plan.beds[b] ?? 0;
@@ -259,7 +365,7 @@ export class Nature {
     lp.frequency.value = 14000 - 9000 * dist;
     const g = ctx.createGain();
     g.gain.value = 1.15 - 0.75 * dist;
-    p.connect(lp).connect(g).connect(this.out);
+    p.connect(lp).connect(g).connect(this.dest);
     if (far > 0) {
       const fg = ctx.createGain();
       fg.gain.value = far;
@@ -383,10 +489,17 @@ export class Nature {
 
   // ── the calls ────────────────────────────────────────────────────────────
   private call(v: Voice, t: number) {
+    const prev = this.dest;
+    this.dest = NOT_BIRD.has(v) ? this.out : this.birds;
+    this.voice(v, t);
+    this.dest = prev;
+  }
+
+  private voice(v: Voice, t: number) {
     switch (v) {
       case 'robin': return this.robin(t);
       case 'chickadee': return this.chickadee(t);
-      case 'sparrow': return this.sparrow(t);
+      case 'whiteThroat': return this.whiteThroat(t);
       case 'cardinal': return this.cardinal(t);
       case 'dove': return this.dove(t);
       case 'crow': return this.crow(t);
@@ -409,7 +522,6 @@ export class Nature {
       case 'drip': return this.drip(t);
       case 'fishJump': return this.fishJump(t);
       case 'thunder': return this.thunder(t);
-      case 'crackle': return;
       case 'crickets': return;
       case 'thrush': return this.thrush(t);
       case 'wren': return this.wren(t);
@@ -423,10 +535,37 @@ export class Nature {
       case 'loonYodel': return this.loonYodel(t);
       case 'wave': return this.wave(t);
       case 'lap': return this.lap(t);
+      case 'woodThrush': return this.woodThrush(t);
+      case 'veery': return this.veery(t);
+      case 'swainson': return this.swainson(t);
+      case 'ovenbird': return this.ovenbird(t);
+      case 'vireo': return this.vireo(t);
+      case 'songSparrow': return this.songSparrow(t);
+      case 'oriole': return this.oriole(t);
+      case 'houseFinch': return this.houseFinch(t);
+      case 'houseWren': return this.houseWren(t);
+      case 'starling': return this.starling(t);
+      case 'nuthatch': return this.nuthatch(t);
+      case 'junco': return this.junco(t);
+      case 'kingfisher': return this.kingfisher(t);
+      case 'raven': return this.raven(t);
+      case 'eagle': return this.eagle(t);
+      case 'variedThrush': return this.variedThrush(t);
+      case 'plover': return this.plover(t);
+      case 'tern': return this.tern(t);
+      case 'savannah': return this.savannah(t);
+      case 'blackbird': return this.blackbird(t);
+      case 'nightingale': return this.nightingale(t);
+      case 'scopsOwl': return this.scopsOwl(t);
+      case 'swift': return this.swift(t);
+      case 'serin': return this.serin(t);
+      case 'collaredDove': return this.collaredDove(t);
+      case 'euroRobin': return this.euroRobin(t);
+      case 'whippoorwill': return this.whippoorwill(t);
       case 'chorus': {
         const list = this.plan?.chorus ?? [];
         if (!list.length) return;
-        this.distFloor = 0.9;
+        this.distFloor = rand(0.8, 1);
         this.call(list[Math.floor(Math.random() * list.length)], t + rand(0, 0.5));
         this.distFloor = 0;
         return;
@@ -435,20 +574,37 @@ export class Nature {
   }
 
   robin(t: number) {
+    // "cheerily, cheer-up, cheerio": groups of two to four slurred whistles,
+    // each syllable a rise and fall, with a breath between groups
     const out = this.place();
-    const n = 3 + Math.floor(Math.random() * 5);
     const base = rand(2100, 2600);
+    const groups = 2 + Math.floor(Math.random() * 3);
     let tt = t;
-    for (let k = 0; k < n; k++) {
-      const a = base * rand(0.9, 1.25), b = a * rand(1.1, 1.3), c = a * rand(0.85, 1.05);
-      this.whistle(tt, [[0, a], [0.06, b], [0.16, c]], 0.035, out, 0.1);
-      tt += rand(0.22, 0.34);
-      if (k % 3 === 2) tt += 0.4; // the phrase breathes
+    for (let g = 0; g < groups; g++) {
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) {
+        const a = base * rand(0.85, 1.2), b = a * rand(1.12, 1.35), c = a * rand(0.8, 1.02);
+        const d = rand(0.13, 0.19);
+        this.note(tt, d, [[0, a], [0.35, b], [1, c]], 0.036, out, { atk: 0.35, harm: 0.1 });
+        tt += d + rand(0.06, 0.12);
+      }
+      tt += rand(0.45, 0.8);
     }
   }
 
   chickadee(t: number) {
     const out = this.place();
+    if (Math.random() < 0.35) {
+      // the call: "chick-a-dee-dee-dee", bright chips then buzzy "dee"s
+      // (a low fundamental whose harmonics ring up near 4 kHz)
+      const f = rand(6200, 7000);
+      this.note(t, 0.05, [[0, f], [1, f * 0.78]], 0.022, out);
+      this.note(t + 0.07, 0.04, [[0, f * 0.9], [1, f * 0.7]], 0.018, out);
+      const n = 2 + Math.floor(Math.random() * 4);
+      for (let k = 0; k < n; k++) this.nasal(t + 0.16 + k * 0.15, 420, 400, 0.12, 0.022, [3400, 4300], out);
+      return;
+    }
+    // the song: "fee-bee", two pure whistles a step apart
     const hi = rand(3800, 4100);
     this.whistle(t, [[0, hi], [0.32, hi * 0.985]], 0.04, out, 0.02);
     // "bee": lower, with the small dip in the middle
@@ -456,26 +612,46 @@ export class Nature {
     this.whistle(t + 0.42, [[0, lo], [0.12, lo * 0.97], [0.18, lo * 1.0], [0.38, lo * 0.98]], 0.036, out, 0.02);
   }
 
-  sparrow(t: number) {
-    const out = this.place(rand(0.4, 1));
-    const a = rand(3100, 3500), b = a * 1.22;
-    this.whistle(t, [[0, a], [0.75, a]], 0.032, out, 0.02);
-    this.whistle(t + 0.85, [[0, b], [0.7, b]], 0.03, out, 0.02);
-    let tt = t + 1.65;
-    for (let k = 0; k < 3; k++) {
-      for (const f of [b * 1.04, b, b * 0.96]) {
-        this.whistle(tt, [[0, f], [0.11, f]], 0.027, out, 0.02);
-        tt += 0.13;
+  whiteThroat(t: number) {
+    // "oh sweet Canada Canada Canada": a long pure whistle, a step up, then
+    // triplets, held and a little sad. Since ~2000 a "Cana-Cana" doublet
+    // ending has spread east from BC; some Ontario birds sing it now.
+    const out = this.place(rand(0.3, 1), rand(-0.9, 0.9), 0.3);
+    const f = rand(3000, 3500);
+    const opts: NoteOpts = { atk: 0.15, trill: 6, depth: 0.004 };
+    this.note(t, 0.8, [[0, f], [1, f * 0.995]], 0.034, out, opts);
+    const up = f * (Math.random() < 0.5 ? 1.19 : 1.26);
+    this.note(t + 0.9, 0.75, [[0, up], [1, up * 0.997]], 0.032, out, opts);
+    const doublets = Math.random() < 0.35;
+    const cell: [number, number][] = doublets ? [[1.03, 0.14], [0.98, 0.13]] : [[1.04, 0.15], [1.0, 0.11], [0.98, 0.11]];
+    let tt = t + 1.75;
+    const reps = 3 + Math.floor(Math.random() * 2);
+    for (let r = 0; r < reps; r++) {
+      for (const [ratio, d] of cell) {
+        const ff = up * ratio;
+        this.note(tt, d, [[0, ff], [1, ff * 0.99]], 0.029 * (1 - r * 0.1), out, { atk: 0.3 });
+        tt += d + 0.02;
       }
-      tt += 0.05;
+      tt += 0.03;
     }
   }
 
   cardinal(t: number) {
+    // a few slow, ringing "cheer"s, then quick "birdy birdy birdy"s: steep
+    // downslurs from ~4 to ~2 kHz, the fast ones with an upturned tail
     const out = this.place();
-    const n = 4 + Math.floor(Math.random() * 4);
     const top = rand(3600, 4300);
-    for (let k = 0; k < n; k++) this.whistle(t + k * 0.27, [[0, top], [0.2, top * 0.48]], 0.034, out, 0.04);
+    let tt = t;
+    const slow = Math.floor(Math.random() * 4);
+    for (let k = 0; k < slow; k++) {
+      this.note(tt, 0.32, [[0, top * 1.05], [0.7, top * 0.5], [1, top * 0.46]], 0.036, out, { atk: 0.1, harm: 0.05 });
+      tt += 0.42;
+    }
+    const n = 4 + Math.floor(Math.random() * 5);
+    for (let k = 0; k < n; k++) {
+      this.note(tt, 0.15, [[0, top], [0.75, top * 0.48], [1, top * 0.6]], 0.034, out, { atk: 0.12, harm: 0.05 });
+      tt += 0.19;
+    }
   }
 
   dove(t: number) {
@@ -746,40 +922,53 @@ export class Nature {
    * are short, smooth and sweep fast; a flat-topped beep sounds electronic.
    */
   private sing(t: number, f0: number, f1: number, dur: number, peak: number, out: AudioNode, trill = 0, depth = 0, second = 0) {
+    this.note(t, dur, [[0, f0], [1, f1]], peak, out, { trill, depth, second });
+  }
+
+  /**
+   * One sung note with a detailed pitch contour: the pitch passes through
+   * `pts` ([fraction of the note, Hz], …) in exponential glides, under a
+   * smooth swell that peaks `atk` of the way through. Options: a trill
+   * (frequency modulation at `trill` Hz, `depth` × f), the other side of
+   * the syrinx (`second` × f at `level`; just off 1 the two voices beat,
+   * the burry, ethereal sound of veeries and varied thrushes) and a little
+   * 2nd harmonic (`harm`) for the fuller, flute-like voices.
+   */
+  private note(t: number, dur: number, pts: [number, number][], peak: number, out: AudioNode, o: NoteOpts = {}) {
     const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    const g = ctx.createGain();
-    const N = 16;
+    const atk = o.atk ?? 0.5;
+    const N = 24;
     const curve = new Float32Array(N);
-    for (let k = 0; k < N; k++) curve[k] = peak * Math.pow(Math.sin((Math.PI * k) / (N - 1)), 1.4) + 1e-5;
-    g.gain.value = 0;
-    g.gain.setValueCurveAtTime(curve, t, dur);
-    o.connect(g).connect(out);
-    const nodes: OscillatorNode[] = [o];
-    if (trill > 0) {
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = trill;
-      const ld = ctx.createGain();
-      ld.gain.value = f0 * depth;
-      lfo.connect(ld).connect(o.frequency);
-      nodes.push(lfo);
+    for (let k = 0; k < N; k++) {
+      const x = k / (N - 1);
+      const y = x < atk ? Math.sin((Math.PI / 2) * (x / atk)) : Math.cos((Math.PI / 2) * ((x - atk) / (1 - atk)));
+      curve[k] = Math.pow(Math.max(y, 0), 1.4) + 1e-5;
     }
-    if (second > 0) {
-      // the other side of the syrinx: a second, quieter voice
-      const o2 = ctx.createOscillator();
-      o2.frequency.setValueAtTime(f0 * second, t);
-      o2.frequency.exponentialRampToValueAtTime(f1 * second, t + dur);
-      const g2 = ctx.createGain();
-      g2.gain.value = 0;
-      g2.gain.setValueCurveAtTime(curve.map((x) => x * 0.35), t, dur);
-      o2.connect(g2).connect(out);
-      nodes.push(o2);
+    const voices: [number, number][] = [[1, 1]];
+    if (o.second) voices.push([o.second, o.level ?? 0.35]);
+    if (o.harm) voices.push([2, o.harm]);
+    let lfo: OscillatorNode | null = null;
+    if (o.trill && o.depth) {
+      lfo = ctx.createOscillator();
+      lfo.frequency.value = o.trill;
+      lfo.start(t);
+      lfo.stop(t + dur + 0.02);
     }
-    for (const n of nodes) {
-      n.start(t);
-      n.stop(t + dur + 0.02);
+    for (const [r, a] of voices) {
+      const osc = ctx.createOscillator();
+      osc.frequency.setValueAtTime(pts[0][1] * r, t);
+      for (const [x, f] of pts.slice(1)) osc.frequency.exponentialRampToValueAtTime(f * r, t + Math.max(x, 0.01) * dur);
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      g.gain.setValueCurveAtTime(curve.map((y) => y * peak * a), t, dur);
+      osc.connect(g).connect(out);
+      if (lfo) {
+        const ld = ctx.createGain();
+        ld.gain.value = pts[0][1] * r * o.depth!;
+        lfo.connect(ld).connect(osc.frequency);
+      }
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
     }
   }
 
@@ -944,4 +1133,409 @@ export class Nature {
     if (Math.random() < 0.4) this.whistle(t, [[0, rand(180, 260)], [0.05, rand(120, 160)]], 0.01, out, 0);
   }
 
+  // ── the birds of each place ──────────────────────────────────────────────
+  woodThrush(t: number) {
+    // "ee-oh-LAY… trrrl": two soft low pickups, a liquid flute phrase, then
+    // a shimmering trill from both sides of the syrinx at once. Each phrase
+    // differs from the last; a bout is a few phrases seconds apart.
+    const out = this.place(rand(0.3, 0.9), rand(-0.9, 0.9), 0.3);
+    const shapes = [[1, 1.26, 1.12], [1.19, 1.5, 1.33], [1, 1.33, 1.68, 1.5], [1.12, 1, 1.26]];
+    const phrases = 3 + Math.floor(Math.random() * 3);
+    let tt = t;
+    for (let p = 0; p < phrases; p++) {
+      const base = rand(1500, 2100);
+      for (let k = 0; k < 2; k++) this.note(tt + k * 0.11, 0.06, [[0, base * 0.8], [1, base * 0.74]], 0.012, out, { harm: 0.1 });
+      let at = tt + 0.26;
+      for (const r of shapes[Math.floor(Math.random() * shapes.length)]) {
+        const f = base * r;
+        this.note(at, 0.17, [[0, f * 0.96], [0.3, f * 1.02], [1, f * 0.98]], 0.05, out, { atk: 0.25, harm: 0.08 });
+        at += 0.19;
+      }
+      const ft = rand(3800, 5200);
+      this.note(at + 0.02, rand(0.3, 0.5), [[0, ft], [1, ft * rand(0.9, 1.1)]], 0.022, out, { trill: rand(40, 60), depth: 0.12, second: rand(1.18, 1.32), atk: 0.2 });
+      tt += rand(2.8, 4.2);
+    }
+  }
+
+  veery(t: number) {
+    // a breezy, liquid spiral falling in pitch: rolled notes overlapping,
+    // two voices a few per cent apart beating against each other
+    const out = this.place(rand(0.4, 1), rand(-0.9, 0.9), 0.35);
+    const bouts = 1 + Math.floor(Math.random() * 2);
+    for (let b = 0; b < bouts; b++) {
+      const t0 = t + b * rand(3, 4.5);
+      const f = rand(3600, 4300);
+      const n = 6 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) {
+        const ff = f * Math.pow(0.9, k);
+        const a = 0.03 * Math.min(1, (k + 1) / 2) * (1 - k / (n + 4));
+        this.note(t0 + k * 0.11, 0.22, [[0, ff * 1.05], [1, ff * 0.92]], a, out, { trill: rand(28, 36), depth: 0.05, second: 1.035, level: 0.6, atk: 0.3 });
+      }
+    }
+  }
+
+  swainson(t: number) {
+    // Swainson's thrush: an upward spiral of rolled, flute-like notes
+    const out = this.place(rand(0.3, 1), rand(-0.9, 0.9), 0.3);
+    const f = rand(1500, 1800);
+    const n = 7 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) {
+      const ff = f * Math.pow(1.12, k);
+      const a = 0.032 * (k < 2 ? 0.6 : 1) * (k > n - 3 ? 0.7 : 1);
+      this.note(t + k * 0.12, 0.14, [[0, ff * 0.94], [0.5, ff * 1.06], [1, ff]], a, out, { trill: 24, depth: 0.04, second: 1.02, level: 0.4, atk: 0.3 });
+    }
+  }
+
+  ovenbird(t: number) {
+    // "teacher, TEACHER, TEACHER": two-note pairs, growing louder
+    const out = this.place(rand(0.3, 0.9));
+    const f = rand(3800, 4600);
+    const n = 7 + Math.floor(Math.random() * 4);
+    for (let k = 0; k < n; k++) {
+      const a = 0.008 + (0.034 * k) / (n - 1);
+      const tt = t + k * 0.3;
+      this.note(tt, 0.09, [[0, f * 1.15], [1, f * 0.95]], a, out, { atk: 0.15 });
+      this.note(tt + 0.11, 0.1, [[0, f * 0.8], [0.5, f * 0.86], [1, f * 0.78]], a * 0.8, out);
+    }
+  }
+
+  vireo(t: number) {
+    // red-eyed vireo: "here I am… where are you… over here…": short
+    // whistled phrases, each different, with a pause between, all day long
+    const out = this.place();
+    const n = 5 + Math.floor(Math.random() * 5);
+    let tt = t;
+    for (let k = 0; k < n; k++) {
+      const f = rand(2600, 3600);
+      const d = rand(0.18, 0.3);
+      const shapes: [number, number][][] = [
+        [[0, f * 0.75], [1, f * 1.25]],
+        [[0, f * 1.3], [1, f * 0.7]],
+        [[0, f * 0.8], [0.4, f * 1.3], [1, f * 0.9]],
+        [[0, f * 1.2], [0.5, f * 0.8], [1, f * 1.15]],
+      ];
+      this.note(tt, d, shapes[Math.floor(Math.random() * shapes.length)], 0.032, out, { atk: 0.3, harm: 0.05 });
+      if (Math.random() < 0.4) this.note(tt + d + 0.03, 0.08, [[0, f * 1.1], [1, f * 0.85]], 0.025, out);
+      tt += d + rand(0.4, 0.75);
+    }
+  }
+
+  songSparrow(t: number) {
+    // "maids, maids, maids, put on your tea-kettle-ettle-ettle": three clear
+    // notes, a buzz, a quick run of varied notes and a closing trill
+    const out = this.place();
+    const f = rand(2600, 3200);
+    for (let k = 0; k < 3; k++) this.note(t + k * 0.24, 0.1, [[0, f * 1.05], [1, f * 0.95]], 0.03, out, { atk: 0.2 });
+    this.note(t + 0.75, 0.3, [[0, f * 1.35], [1, f * 1.25]], 0.02, out, { trill: 110, depth: 0.06 });
+    let tt = t + 1.12;
+    for (let k = 0; k < 4; k++) {
+      const ff = f * rand(0.8, 1.6);
+      this.note(tt, 0.06, [[0, ff * 1.2], [1, ff * 0.8]], 0.026, out);
+      tt += 0.085;
+    }
+    const ft = f * rand(1.1, 1.5);
+    for (let k = 0; k < 6; k++) {
+      this.note(tt, 0.04, [[0, ft * 1.1], [1, ft * 0.85]], 0.022 * (1 - k / 9), out);
+      tt += 0.055;
+    }
+  }
+
+  oriole(t: number) {
+    // Baltimore oriole: rich, unhurried whistles, like someone whistling a
+    // tune to themselves; fuller than most (a touch of 2nd harmonic)
+    const out = this.place(rand(0.3, 0.9), rand(-0.9, 0.9), 0.15);
+    const f = rand(1500, 2000);
+    const steps = [1, 1.12, 1.26, 1.5, 0.84, 1.33];
+    const n = 4 + Math.floor(Math.random() * 4);
+    let tt = t;
+    for (let k = 0; k < n; k++) {
+      const ff = f * steps[Math.floor(Math.random() * steps.length)];
+      const d = rand(0.12, 0.28);
+      this.note(tt, d, [[0, ff * rand(0.88, 1.1)], [0.5, ff], [1, ff * rand(0.85, 1.15)]], 0.045, out, { atk: 0.3, harm: 0.15 });
+      tt += d + rand(0.05, 0.18);
+    }
+  }
+
+  houseFinch(t: number) {
+    // a long, cheerful, jumbled warble, often ending on a burry downslur
+    const out = this.place();
+    const end = t + rand(1.8, 3);
+    let tt = t;
+    while (tt < end) {
+      const d = rand(0.05, 0.11);
+      const ff = rand(2200, 5200);
+      this.note(tt, d, [[0, ff * rand(0.8, 1.2)], [1, ff * rand(0.8, 1.2)]], 0.026, out);
+      tt += d + rand(0.01, 0.05);
+    }
+    if (Math.random() < 0.6) this.note(tt + 0.05, 0.25, [[0, 4200], [1, 2300]], 0.026, out, { trill: 90, depth: 0.05 });
+  }
+
+  houseWren(t: number) {
+    // house wren: a short, bubbly, tumbling cascade, lower than the winter
+    // wren's, starting with a little rattle
+    const out = this.place();
+    let f = rand(3500, 4500);
+    this.note(t, 0.25, [[0, f], [1, f * 0.9]], 0.018, out, { trill: 35, depth: 0.1 });
+    let tt = t + 0.28;
+    const end = tt + rand(1.5, 2.4);
+    while (tt < end) {
+      const d = rand(0.04, 0.08);
+      this.note(tt, d, [[0, f * 1.1], [1, f * 0.88]], 0.024, out);
+      tt += d + 0.012;
+      f = Math.min(5500, Math.max(2400, f * rand(0.85, 1.12) * (tt > end - 0.6 ? 0.97 : 1)));
+    }
+  }
+
+  starling(t: number) {
+    // a medley from the wires: a drooping "wolf whistle", clicks, a rattle,
+    // a rising whistle (starlings mimic everything around them)
+    const out = this.place(rand(0.3, 0.8));
+    this.note(t, 0.5, [[0, 3800], [0.4, 3600], [1, 1600]], 0.03, out, { atk: 0.1 });
+    let tt = t + 0.65;
+    for (let k = 0; k < 8; k++) this.noiseBurst(tt + k * 0.03, 'bandpass', rand(3000, 6000), 3, 0.025, 0.001, 0.012, out);
+    tt += 0.35;
+    this.note(tt, 0.3, [[0, 2500], [1, 2400]], 0.018, out, { trill: 70, depth: 0.25 });
+    if (Math.random() < 0.6) this.note(tt + 0.45, 0.35, [[0, 1800], [0.7, 3600], [1, 3400]], 0.026, out, { atk: 0.4 });
+  }
+
+  nuthatch(t: number) {
+    // white-breasted nuthatch: a nasal "yank yank", like a little toy horn
+    const out = this.place(rand(0.3, 0.9));
+    const n = 3 + Math.floor(Math.random() * 4);
+    const f = rand(650, 750);
+    for (let k = 0; k < n; k++) this.nasal(t + k * rand(0.2, 0.3), f, f * 0.97, 0.09, 0.04, [1400, 2800], out);
+  }
+
+  junco(t: number) {
+    // dark-eyed junco or pine warbler: a level, musical trill, one note
+    // repeated ~14 times a second
+    const out = this.place();
+    const f = rand(3500, 5000);
+    const n = 18 + Math.floor(Math.random() * 10);
+    for (let k = 0; k < n; k++) this.note(t + k * 0.07, 0.05, [[0, f * 1.1], [1, f * 0.9]], 0.024 * Math.min(1, (k + 1) / 4), out);
+  }
+
+  kingfisher(t: number) {
+    // belted kingfisher: a loud, dry rattle as it flies along the shore
+    const out = this.place(rand(0.4, 0.9), 0, 0.25);
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    const dur = rand(1, 1.6);
+    out.pan.setValueAtTime(-0.8 * dir, t);
+    out.pan.linearRampToValueAtTime(0.8 * dir, t + dur);
+    for (let tt = t; tt < t + dur; tt += rand(0.03, 0.04)) this.noiseBurst(tt, 'bandpass', rand(2800, 3600), 2.5, 0.07, 0.002, 0.02, out);
+  }
+
+  raven(t: number) {
+    // common raven: deep, hollow "kronk"s that carry a long way
+    const out = this.place(rand(0.5, 1), rand(-0.9, 0.9), 0.4);
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) this.nasal(t + k * rand(0.5, 0.9), 330, 290, 0.25, 0.045, [700, 1300], out);
+  }
+
+  eagle(t: number) {
+    // bald eagle: not the film scream (that is a red-tailed hawk) but a
+    // thin, high chittering "kleek-kik-ik-ik-ik"
+    const out = this.place(rand(0.5, 1), rand(-0.9, 0.9), 0.3);
+    const f = rand(2600, 3000);
+    this.note(t, 0.18, [[0, f * 0.9], [0.3, f * 1.1], [1, f * 0.95]], 0.03, out, { harm: 0.2 });
+    for (let k = 0; k < 6; k++) this.note(t + 0.25 + k * 0.09, 0.06, [[0, f * 1.05], [1, f * 0.85]], 0.025 * (1 - k / 9), out, { harm: 0.2 });
+  }
+
+  variedThrush(t: number) {
+    // varied thrush: one long, eerie, burry whistle, silence, then another
+    // at a new pitch. Two voices 1–2 % apart beat ~50 times a second: the burr.
+    const out = this.place(rand(0.4, 1), rand(-0.9, 0.9), 0.4);
+    const n = 2 + Math.floor(Math.random() * 2);
+    let tt = t;
+    for (let k = 0; k < n; k++) {
+      const f = rand(2400, 4200);
+      const d = rand(1.4, 2.2);
+      this.note(tt, d, [[0, f], [1, f * 0.99]], 0.03, out, { atk: 0.2, second: rand(1.012, 1.018), level: 0.8 });
+      tt += d + rand(3, 6);
+    }
+  }
+
+  plover(t: number) {
+    // piping plover: soft, clear, mellow "peep-lo" whistles from the sand
+    const out = this.place(rand(0.3, 0.9));
+    const f = rand(2200, 2600);
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) {
+      const tt = t + k * rand(0.6, 1);
+      this.note(tt, 0.14, [[0, f * 0.9], [0.4, f * 1.05], [1, f]], 0.032, out, { atk: 0.3, harm: 0.05 });
+      this.note(tt + 0.16, 0.16, [[0, f * 0.92], [1, f * 0.78]], 0.026, out, { harm: 0.05 });
+    }
+  }
+
+  tern(t: number) {
+    // common tern: a harsh, drawn-out "kee-arrr" over the surf, and "kip"s
+    const out = this.place(rand(0.3, 1), rand(-0.9, 0.9), 0.2);
+    const f = rand(2600, 3200);
+    this.nasal(t, f, f * 0.6, 0.45, 0.04, [f * 1.1, f * 2.2], out);
+    const kips = Math.floor(Math.random() * 4);
+    for (let k = 0; k < kips; k++) this.nasal(t + 0.6 + k * 0.22, f * 1.1, f, 0.06, 0.02, [f * 1.2, f * 2.4], out);
+  }
+
+  savannah(t: number) {
+    // savannah sparrow: a thin, insect-like "tsit tsit tsit tseeeee-tsaay"
+    const out = this.place(rand(0.3, 0.8));
+    const f = rand(6000, 7000);
+    for (let k = 0; k < 3; k++) this.note(t + k * 0.12, 0.03, [[0, f * 1.1], [1, f * 0.9]], 0.018, out);
+    this.note(t + 0.42, 0.7, [[0, f * 0.95], [1, f]], 0.026, out, { trill: 140, depth: 0.03 });
+    this.note(t + 1.15, 0.3, [[0, f * 0.75], [1, f * 0.7]], 0.016, out, { trill: 60, depth: 0.04 });
+  }
+
+  blackbird(t: number) {
+    // Eurasian blackbird: low, rich, unhurried fluting, each phrase new,
+    // often ending in a quiet, squeaky twitter
+    const out = this.place(rand(0.3, 0.9), rand(-0.9, 0.9), 0.25);
+    const phrases = 2 + Math.floor(Math.random() * 3);
+    let tt = t;
+    for (let p = 0; p < phrases; p++) {
+      const base = rand(1400, 2100);
+      const n = 3 + Math.floor(Math.random() * 4);
+      for (let k = 0; k < n; k++) {
+        const f = base * rand(0.85, 1.6);
+        const d = rand(0.12, 0.3);
+        this.note(tt, d, [[0, f * rand(0.9, 1.05)], [0.4, f * rand(1, 1.12)], [1, f * rand(0.85, 1)]], 0.042, out, { atk: 0.3, harm: 0.12 });
+        tt += d + rand(0.02, 0.08);
+      }
+      if (Math.random() < 0.7) {
+        const twitter = 4 + Math.floor(Math.random() * 4);
+        for (let k = 0; k < twitter; k++) {
+          const f = rand(5000, 7500);
+          this.note(tt, 0.04, [[0, f], [1, f * rand(0.7, 1.3)]], 0.012, out);
+          tt += 0.05;
+        }
+      }
+      tt += rand(2.5, 4.5);
+    }
+  }
+
+  nightingale(t: number) {
+    // common nightingale, the night's virtuoso: phrase after phrase, each
+    // different: pure "piu"s swelling into a crescendo, deep "chook"s, a
+    // rattling trill, a long rising whistle; short pauses between
+    const out = this.place(rand(0.3, 0.8), rand(-0.8, 0.8), 0.35);
+    const phrases = 3 + Math.floor(Math.random() * 3);
+    let tt = t;
+    for (let p = 0; p < phrases; p++) {
+      const kind = Math.floor(Math.random() * 4);
+      if (kind === 0) {
+        const f = rand(1800, 2600);
+        const n = 6 + Math.floor(Math.random() * 5);
+        let gap = 0.32;
+        for (let k = 0; k < n; k++) {
+          this.note(tt, 0.13, [[0, f * 0.9], [0.4, f * 1.1], [1, f * 0.95]], 0.012 + (0.035 * k) / n, out, { atk: 0.3, harm: 0.06 });
+          tt += gap;
+          gap = Math.max(0.15, gap * 0.9);
+        }
+      } else if (kind === 1) {
+        const n = 4 + Math.floor(Math.random() * 3);
+        for (let k = 0; k < n; k++) {
+          this.note(tt, 0.06, [[0, 1300], [1, 650]], 0.04, out, { harm: 0.3 });
+          tt += 0.11;
+        }
+      } else if (kind === 2) {
+        const f = rand(3000, 4200);
+        const end = tt + rand(0.8, 1.3);
+        for (let k = 0; tt < end; k++) {
+          const ff = k % 2 ? f : f * 0.75;
+          this.note(tt, 0.03, [[0, ff], [1, ff * 0.92]], 0.026, out);
+          tt += 0.04;
+        }
+      } else {
+        const f = rand(1800, 2200);
+        this.note(tt, 0.9, [[0, f], [0.6, f * 1.8], [1, f * 1.75]], 0.034, out, { atk: 0.6, trill: 6, depth: 0.006 });
+        tt += 0.9;
+      }
+      tt += rand(0.7, 1.6);
+    }
+  }
+
+  scopsOwl(t: number) {
+    // Eurasian scops owl: a soft, pure "tyuu" every couple of seconds, like
+    // a slow sonar through the warm Mediterranean night
+    const out = this.place(rand(0.4, 1), rand(-0.8, 0.8), 0.35);
+    const f = rand(1150, 1300);
+    const n = 4 + Math.floor(Math.random() * 5);
+    let tt = t;
+    for (let k = 0; k < n; k++) {
+      this.note(tt, 0.16, [[0, f * 0.96], [0.3, f], [1, f * 0.97]], 0.04, out, { atk: 0.3, harm: 0.05 });
+      tt += rand(2.3, 2.8);
+    }
+  }
+
+  swift(t: number) {
+    // a screaming party of swifts racing over the rooftops: shrill trilled
+    // screams sweeping across from one side to the other
+    const out = this.place(rand(0.3, 0.8), 0, 0.15);
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    const dur = rand(1.5, 2.5);
+    out.pan.setValueAtTime(-0.9 * dir, t);
+    out.pan.linearRampToValueAtTime(0.9 * dir, t + dur);
+    const n = 4 + Math.floor(Math.random() * 5);
+    for (let k = 0; k < n; k++) {
+      const f = rand(5000, 6500);
+      this.note(t + rand(0, dur - 0.5), rand(0.35, 0.7), [[0, f], [1, f * 0.9]], 0.016, out, { trill: rand(55, 80), depth: 0.08, second: 1.06, atk: 0.2 });
+    }
+  }
+
+  serin(t: number) {
+    // European serin: a fast, glassy, jingling twitter, like shaken keys
+    const out = this.place();
+    const end = t + rand(1.5, 2.5);
+    let hi = true;
+    for (let tt = t; tt < end; tt += 0.042) {
+      const f = hi ? rand(6000, 8000) : rand(4000, 5500);
+      this.note(tt, 0.034, [[0, f], [1, f * rand(0.8, 1.2)]], 0.022, out);
+      hi = !hi || Math.random() < 0.3;
+    }
+  }
+
+  collaredDove(t: number) {
+    // Eurasian collared dove: "coo-COOO-cook", two or three times over
+    const out = this.place(rand(0.3, 0.8));
+    const f = rand(480, 540);
+    const n = 2 + Math.floor(Math.random() * 2);
+    for (let k = 0; k < n; k++) {
+      const tt = t + k * 1.6;
+      this.note(tt, 0.25, [[0, f], [1, f * 0.97]], 0.035, out, { harm: 0.2 });
+      this.note(tt + 0.35, 0.55, [[0, f * 1.15], [1, f * 1.1]], 0.045, out, { harm: 0.2, atk: 0.3 });
+      this.note(tt + 1.0, 0.3, [[0, f * 0.92], [1, f * 0.85]], 0.035, out, { harm: 0.2 });
+    }
+  }
+
+  euroRobin(t: number) {
+    // European robin: thin, wistful cascades of high notes, quick runs
+    // sliding down and up; it sings right through the Mediterranean winter
+    const out = this.place();
+    const phrases = 2 + Math.floor(Math.random() * 2);
+    let tt = t;
+    for (let p = 0; p < phrases; p++) {
+      const n = 6 + Math.floor(Math.random() * 7);
+      let f = rand(5000, 7000);
+      for (let k = 0; k < n; k++) {
+        const d = rand(0.05, 0.12);
+        this.note(tt, d, [[0, f], [1, f * rand(0.75, 1.1)]], 0.022, out, Math.random() < 0.15 ? { trill: 35, depth: 0.06 } : {});
+        tt += d + rand(0.01, 0.04);
+        f = Math.min(8000, Math.max(3000, f * rand(0.82, 1.1)));
+      }
+      tt += rand(1.5, 3);
+    }
+  }
+
+  whippoorwill(t: number) {
+    // eastern whip-poor-will: "WHIP-poor-WILL" over and over, from the dark
+    // woods behind the cottage on summer nights
+    const out = this.place(rand(0.5, 1), rand(-0.8, 0.8), 0.4);
+    const f = rand(1300, 1500);
+    const n = 6 + Math.floor(Math.random() * 8);
+    for (let k = 0; k < n; k++) {
+      const tt = t + k * 0.95;
+      this.note(tt, 0.12, [[0, f * 1.2], [1, f * 1.5]], 0.03, out, { harm: 0.05 });
+      this.note(tt + 0.17, 0.08, [[0, f], [1, f * 0.95]], 0.018, out);
+      this.note(tt + 0.3, 0.26, [[0, f * 1.05], [0.6, f * 1.75], [1, f * 1.55]], 0.036, out, { atk: 0.5, harm: 0.05 });
+    }
+  }
 }

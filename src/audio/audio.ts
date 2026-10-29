@@ -8,6 +8,10 @@
 //    (γ = 1.4, p₀ = 101 kPa, ρ = 1000 kg/m³). A 0.5 mm bubble sings at
 //    ~6.5 kHz; bigger drops trap bigger bubbles and plunk lower. The pitch
 //    rises slightly as the bubble is pinched toward the surface.
+//  • A water slap is built the way it happens: the smack of the palm, the
+//    crackle of the shattering sheet, the low "bloop" of the cavity's
+//    bubble, a cloud of small bubbles and the wash; then each spray drop
+//    is heard landing where the simulation drops it, panned on screen.
 //  • Each fluid slaps differently: water is a splash; honey a slow, low
 //    "gloop" (viscous, no droplets); mercury a bright metallic ring (it is a
 //    metal with a stiff, dense surface); oobleck a dull thud (it jams solid).
@@ -26,6 +30,7 @@ import { Music } from './music';
 import { Nature, type Scene } from './nature';
 
 const MINNAERT = 3.26; // Hz·m
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 /** A synthetic room / landscape impulse response: decaying stereo noise. */
 function impulse(ctx: AudioContext, seconds: number, decay: number, pre = 0.01) {
@@ -245,22 +250,117 @@ export class Audio {
     o.stop(t + attack + decay + 0.05);
   }
 
-  /** the ring of a bubble of radius r [m] pinched off by a drop (Minnaert) */
-  bubble(r: number, gain = 0.15, delay = 0, out: AudioNode = this.sfx) {
+  /** a point in the stereo field (−1 left … 1 right) feeding the effects bus */
+  private panned(pan: number) {
+    const p = this.ctx!.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(this.sfx);
+    return p;
+  }
+
+  /**
+   * The ring of a bubble of radius r [m] pinched off under the surface
+   * (Minnaert). It rings for only a few dozen cycles (thermal, viscous and
+   * radiation damping, decay time ≈ 1 / (π f δ)), and its pitch rises as it
+   * is pulled toward the surface. That quick upward chirp is what makes
+   * water sound wet.
+   */
+  bubble(r: number, gain = 0.15, delay = 0, pan = 0, chirp = rand(1.15, 1.35)) {
     if (!this.ctx) return;
     const f = MINNAERT / Math.max(r, 2e-4);
     if (f > 16000) return;
-    this.tone(f * 0.9, f * 1.25, gain, 0.002, 0.03 + r * 30, delay, 'sine', out);
+    const ctx = this.ctx;
+    const t = ctx.currentTime + delay;
+    const tau = Math.min(0.12, 1 / (Math.PI * f * 0.012));
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * chirp, t + tau * 4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(gain, t + 0.0015);
+    g.gain.setTargetAtTime(0, t + 0.0015, tau);
+    o.connect(g).connect(this.panned(pan));
+    o.start(t);
+    o.stop(t + tau * 7 + 0.01);
+  }
+
+  /** one fragment of a splash: a tiny tick of band-limited noise */
+  private grain(t: number, f: number, q: number, peak: number, decay: number, pan: number) {
+    const ctx = this.ctx!;
+    const s = this.noiseSrc();
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(Math.max(peak, 0.0002), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    s.connect(bp).connect(g).connect(this.panned(pan));
+    s.start(t, Math.random() * 1.9);
+    s.stop(t + decay + 0.01);
+  }
+
+  /**
+   * Water struck by a hand or a toy, in the order it happens:
+   *  1. the smack: the flat palm meets the surface; a sharp broadband crack
+   *     (air squeezed out from under it) over a soft low thud
+   *  2. the sheet: the crown thrown up shatters into fragments; a rapid
+   *     crackle of tiny noise grains, thinning out
+   *  3. the cavity: the hole left behind collapses and pinches off a big
+   *     bubble that rings low and chirps upward, the "bloop"
+   *  4. the bubble cloud: dozens of small bubbles, sizes from a power law
+   *     (many small, few large), each ringing at its Minnaert pitch
+   *  5. the wash: the displaced water rushing back, a soft fading swish
+   * The spray that flies out is heard later, drop by drop, as each one
+   * lands in the simulation (dropLanded).
+   */
+  private waterHit(s: number, pan: number) {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const at = this.panned(pan);
+    // 1. smack
+    this.burst('highpass', 1800, 0.6, 0.3 * s, 0.001, 0.035, 0, at);
+    this.burst('bandpass', 900, 0.9, 0.22 * s, 0.002, 0.07, 0, at);
+    this.tone(130, 70, 0.18 * s, 0.003, 0.09, 0, 'sine', at);
+    // 2. sheet crackle
+    const n = Math.round(20 + 45 * s);
+    for (let k = 0; k < n; k++) {
+      const dt = 0.004 - Math.log(1 - Math.random()) * 0.06 * (0.6 + 0.6 * s);
+      this.grain(t + dt, rand(1500, 7500), rand(1.2, 3), rand(0.03, 0.08) * s * Math.exp(-dt * 5), rand(0.006, 0.02), pan + rand(-0.5, 0.5));
+    }
+    // 3. the cavity's bloop (radius ~6–14 mm: ~230–540 Hz)
+    const R = 0.006 + 0.008 * s * Math.random();
+    this.bubble(R, 0.14 * s, rand(0.035, 0.07), pan, rand(1.3, 1.6));
+    if (Math.random() < 0.5) this.bubble(R * rand(0.4, 0.6), 0.07 * s, rand(0.06, 0.12), pan + rand(-0.3, 0.3));
+    // 4. bubble cloud, radii 0.6–5 mm with p(r) ∝ r⁻²
+    const rMin = 0.0006, rMax = 0.005;
+    const m = Math.round(8 + 24 * s);
+    for (let k = 0; k < m; k++) {
+      const r = rMin / (1 - Math.random() * (1 - rMin / rMax));
+      const dt = 0.01 - Math.log(1 - Math.random()) * 0.08;
+      this.bubble(r, rand(0.02, 0.045) * s * Math.exp(-dt * 3), dt, pan + rand(-0.6, 0.6));
+    }
+    // 5. the wash
+    const w = this.noiseSrc();
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2600, t + 0.02);
+    lp.frequency.exponentialRampToValueAtTime(450, t + 0.7);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.1 * s, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    w.connect(lp).connect(g).connect(at);
+    w.start(t, Math.random());
+    w.stop(t + 0.8);
   }
 
   // ── effects ───────────────────────────────────────────────────────────────
-  slap(fluid: FluidId, strength: number, sprayMl: number) {
+  slap(fluid: FluidId, strength: number, sprayMl: number, pan = 0) {
     if (!this.ctx) return;
     const s = 0.25 + strength * 0.75;
     if (fluid === 'water') {
-      this.tone(160, 55, 0.5 * s, 0.003, 0.18); // the hand hitting the layer
-      this.burst('bandpass', 1400, 0.7, 0.45 * s, 0.003, 0.25);
-      this.splashTail(sprayMl, 0.0015);
+      this.waterHit(Math.min(1, s * (0.9 + Math.min(sprayMl, 20) * 0.01)), pan);
     } else if (fluid === 'honey' || fluid === 'chocolate') {
       // heavy and sticky: a low gloop, then a slow suction pop
       this.tone(110, 60, 0.6 * s, 0.01, 0.45);
@@ -270,7 +370,8 @@ export class Audio {
       // a metallic, dense ring: inharmonic partials decaying slowly
       this.tone(120, 70, 0.45 * s, 0.003, 0.15);
       for (const [f, a] of [[2150, 0.12], [3370, 0.09], [5260, 0.06], [7110, 0.04]]) this.tone(f, f * 0.99, a * s, 0.002, 0.9, 0, 'sine');
-      this.splashTail(sprayMl, 0.0012);
+      // beads skittering off: hard little ticks, no bubbles
+      for (let k = 0; k < Math.min(16, sprayMl * 0.6); k++) this.grain(this.ctx.currentTime + rand(0.05, 0.4), rand(4000, 8000), 4, 0.03, 0.01, pan + rand(-0.5, 0.5));
     } else if (fluid === 'lava') {
       // molten rock: a heavy, slow glorp, a hiss of steam and a crackle of crust
       this.tone(80, 40, 0.65 * s, 0.015, 0.5);
@@ -309,21 +410,28 @@ export class Audio {
     }
   }
 
-  /** splash spray landing back: a scatter of bubble plinks */
-  private splashTail(sprayMl: number, rMean: number) {
-    const n = Math.min(24, Math.round(sprayMl * 0.8));
-    for (let k = 0; k < n; k++) this.bubble(rMean * (0.4 + Math.random() * 1.6), 0.05, 0.12 + Math.random() * 0.6);
-  }
-
-  dropLanded(r: number, onWater: boolean) {
+  /**
+   * A drop from the spray landing. On water it always makes a little tick,
+   * and about half the time traps a bubble that plinks (drops this size
+   * entrain bubbles only within a band of speeds and sizes).
+   */
+  dropLanded(r: number, onWater: boolean, pan = 0) {
     if (!this.ctx) return;
-    if (onWater) this.bubble(r * 0.4, 0.04);
-    else this.burst('highpass', 3000, 0.7, 0.015, 0.001, 0.02);
+    const t = this.ctx.currentTime;
+    if (onWater) {
+      this.grain(t, rand(2500, 6000), 1.5, 0.012 + Math.min(r * 10, 0.02), 0.008, pan);
+      if (Math.random() < 0.5) this.bubble(r * rand(0.3, 0.6), rand(0.025, 0.045), 0.002, pan);
+    } else this.grain(t, rand(3000, 5000), 0.8, 0.015, 0.02, pan);
   }
 
-  stir(speed: number) {
+  /** a finger drawn through the liquid: a soft slosh, and in water the odd gurgle of air dragged under */
+  stir(speed: number, fluid: FluidId = 'water', pan = 0) {
     if (!this.ctx || speed < 0.05) return;
-    this.burst('bandpass', 700 + speed * 900, 0.8, Math.min(0.12, speed * 0.08), 0.03, 0.12);
+    const at = this.panned(pan);
+    this.burst('lowpass', 450 + speed * 700, 0.7, Math.min(0.1, speed * 0.06), 0.04, 0.16, 0, at);
+    if (fluid !== 'water') return;
+    this.burst('bandpass', 1800 + speed * 1500, 1.2, Math.min(0.03, speed * 0.02), 0.02, 0.08, 0, at);
+    if (Math.random() < Math.min(0.7, speed * 0.4)) this.bubble(rand(0.002, 0.006), 0.04, rand(0, 0.08), pan);
   }
 
   squeak() {
@@ -347,18 +455,30 @@ export class Audio {
     o.stop(t + 0.4);
   }
 
-  skip(speed: number, fluid: FluidId) {
+  skip(speed: number, fluid: FluidId, pan = 0) {
     if (!this.ctx) return;
     if (fluid === 'mercury') this.tone(3000, 2900, 0.08, 0.002, 0.4);
     if (fluid === 'oobleck') return this.tone(260, 140, 0.25, 0.002, 0.06, 0, 'triangle');
-    this.burst('bandpass', 2500, 1.2, 0.12 + speed * 0.03, 0.002, 0.06);
-    this.bubble(0.0015 + Math.random() * 0.001, 0.08, 0.01);
+    // a stone kissing the surface: a crisp tick, a fan of spray, one bubble
+    const t = this.ctx.currentTime;
+    this.burst('highpass', 2200, 0.7, 0.09 + speed * 0.02, 0.001, 0.03, 0, this.panned(pan));
+    this.burst('bandpass', 1200, 1, 0.06, 0.002, 0.05, 0, this.panned(pan));
+    for (let k = 0; k < 8; k++) this.grain(t + rand(0, 0.07), rand(2000, 6500), 2, 0.035, 0.012, pan + rand(-0.3, 0.3));
+    this.bubble(rand(0.0012, 0.0025), 0.07, 0.01, pan);
   }
 
-  plop() {
+  /**
+   * A stone dropping in. The deep cavity it opens snaps shut and pinches
+   * off a big bubble whose pitch rises as it collapses: a plop goes up,
+   * not down.
+   */
+  plop(pan = 0) {
     if (!this.ctx) return;
-    this.tone(420, 140, 0.25, 0.003, 0.22);
-    this.bubble(0.004, 0.12, 0.03);
+    const t = this.ctx.currentTime;
+    this.burst('lowpass', 700, 0.8, 0.12, 0.002, 0.06, 0, this.panned(pan));
+    for (let k = 0; k < 6; k++) this.grain(t + rand(0, 0.05), rand(1500, 5000), 2, 0.03, 0.012, pan + rand(-0.2, 0.2));
+    this.bubble(rand(0.006, 0.008), 0.2, 0.025, pan, rand(1.5, 1.8));
+    this.bubble(rand(0.0015, 0.003), 0.05, rand(0.06, 0.12), pan);
   }
 
   crack() {
@@ -367,12 +487,12 @@ export class Audio {
     this.tone(180, 90, 0.15, 0.002, 0.2);
   }
 
-  entry(mass: number, speed: number, fluid: FluidId) {
+  entry(mass: number, speed: number, fluid: FluidId, pan = 0) {
     if (!this.ctx) return;
     const s = Math.min(1, mass * speed * 8);
     if (fluid === 'oobleck') return this.tone(120, 60, 0.4 * s + 0.1, 0.002, 0.1);
+    if (fluid === 'water') return this.waterHit(0.2 + 0.55 * s, pan);
     this.tone(260, 110, 0.3 * s + 0.08, 0.003, 0.15);
-    this.splashTail(s * 10, 0.0018);
   }
 
   cast() {

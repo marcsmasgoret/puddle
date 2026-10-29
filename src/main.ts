@@ -206,7 +206,7 @@ const toys = new Toys(scene, solver, renderer, camera, {
     // momentum the toy actually carries (m·v)
     if (kind === 'duck') audio.squeak();
     if (!isWater(x, z)) return;
-    audio.entry(mass, v, chosenFluid.id);
+    audio.entry(mass, v, chosenFluid.id, panAt(x, z));
     const hit = computeSlap(v, solver.depthAt(x, z), fluid, gravity, radius * 0.7, mass * v);
     const launched = hit.sprayMass > 0 ? drops.spray(x, z, hit.radius, hit.sprayMass, hit.sprayMeanSpeed) : 0;
     solver.addImpulse({ x, z, radius: hit.radius, pressureImpulse: hit.pressureImpulse, volume: -launched });
@@ -229,8 +229,8 @@ const stones = new Stones(
     if (!isWater(e.x, e.z)) return;
     const R = Math.max(STONE.radius * 1.5, 1.5 * grid.dx);
     if (world.ice.enabled) world.ice.breakAt(e.x, e.z, 0.08);
-    if (e.kind === 'skip' || e.kind === 'clatter') audio.skip(e.speed, chosenFluid.id);
-    if (e.kind === 'plop') audio.plop();
+    if (e.kind === 'skip' || e.kind === 'clatter') audio.skip(e.speed, chosenFluid.id, panAt(e.x, e.z));
+    if (e.kind === 'plop') audio.plop(panAt(e.x, e.z));
     if (e.kind === 'clatter') {
       // a jammed impact on oobleck: a brief matte patch, no spray
       jamMarks.unshift({ x: e.x, z: e.z, t: solver.simTime, s: 0.8 });
@@ -361,8 +361,15 @@ function slapAt(x: number, z: number) {
   const launched = slap.sprayMass > 0 ? drops.spray(x, z, slap.radius, slap.sprayMass, slap.sprayMeanSpeed) : 0;
   solver.addImpulse({ x, z, radius: slap.radius, pressureImpulse: slap.pressureImpulse, volume: -launched });
   lastSlap = { froude: +slap.froudeRequested.toFixed(2), sprayMl: +(launched * 1e6).toFixed(1) };
-  audio.slap(chosenFluid.id, settings.strength, launched * 1e6);
+  audio.slap(chosenFluid.id, settings.strength, launched * 1e6, panAt(x, z));
   haptic(8 + settings.strength * 32);
+}
+
+const panPoint = new THREE.Vector3();
+/** where a point of the puddle sits on screen, as a stereo position (−0.7 … 0.7) */
+function panAt(x: number, z: number) {
+  panPoint.set(x, 0, z).project(camera);
+  return Math.max(-1, Math.min(1, panPoint.x)) * 0.7;
 }
 
 attachPointer(canvas, camera, {
@@ -390,7 +397,7 @@ attachPointer(canvas, camera, {
     const now = performance.now();
     if (f.inWater && now - lastSwish > 110) {
       lastSwish = now;
-      audio.stir(Math.hypot(x - m.x0, z - m.z0) / Math.max(m.dt, 1e-3));
+      audio.stir(Math.hypot(x - m.x0, z - m.z0) / Math.max(m.dt, 1e-3), chosenFluid.id, panAt(x, z));
     }
   },
   onFingerUp(id) {
@@ -424,7 +431,7 @@ let lastSwish = 0;
 let drainBack = 0;
 function updateDrops(dt: number) {
   for (const L of drops.step(dt)) {
-    if (Math.random() < 0.35) audio.dropLanded(L.radius, L.onWater);
+    if (Math.random() < 0.35) audio.dropLanded(L.radius, L.onWater, panAt(L.x, L.z));
     if (L.onWater) {
       solver.addImpulse(dropImpact(L.x, L.z, L.radius, L.speed));
     } else {

@@ -17,8 +17,14 @@
 // Structure: a section is a chord progression (each chord two bars) played
 // as a sustained pad, an accompaniment pattern and a melody built from a
 // short motif that is repeated and varied, so it sounds composed rather than
-// random. Sections change key and progression every minute or two, and there
-// are gentle pauses between them.
+// random. Phrases end on a note of the chord under them, and every section
+// closes with a cadence: the last two bars return to the home chord and the
+// melody comes to rest on the tonic. Sections change key and progression
+// every minute or two, and there are gentle pauses between them.
+//
+// Placement: the pad is spread wide, the accompaniment sits a little left,
+// the melody a little right with a soft dotted-eighth echo, the bass and
+// percussion in the middle, like a small ensemble in a room.
 //
 // Scheduling uses the standard Web Audio look-ahead pattern: a timer wakes
 // every 100 ms and queues the notes due in the next 300 ms at exact times.
@@ -53,6 +59,8 @@ interface Style {
   trills?: boolean;
   /** pad brightness 0…1 */
   bright: number;
+  /** the chord each section comes home to */
+  home: Chord;
   /** chance a bar's melody slot rests */
   rest: number;
 }
@@ -62,16 +70,16 @@ const vi: Chord = [9, 'min'], vi7: Chord = [9, 'min7'], Imaj7: Chord = [0, 'maj7
 
 const STYLES: Record<Season, Style> = {
   spring: {
-    bpm: 74, keys: [62, 64, 65], scale: MAJOR, accomp: 'piano', melody: 'flute', bass: false, bells: false, bright: 0.65, rest: 0.25, trills: true,
+    bpm: 74, keys: [62, 64, 65], scale: MAJOR, accomp: 'piano', melody: 'flute', bass: false, bells: false, bright: 0.65, rest: 0.25, trills: true, home: [0, 'add9'],
     progressions: [[I, V, vi, IV], [IVmaj7, I, [5, 'add9'], V], [I, [4, 'min'], IV, I], [vi, IV, I, [7, 'sus4']]],
   },
   summer: {
-    bpm: 68, keys: [55, 57, 60], scale: LYDIAN, accomp: 'guitar', melody: 'guitar', bass: true, bells: false, bright: 0.55, rest: 0.3, groove: 'shaker',
+    bpm: 68, keys: [55, 57, 60], scale: LYDIAN, accomp: 'guitar', melody: 'guitar', bass: true, bells: false, bright: 0.55, rest: 0.3, groove: 'shaker', home: Imaj7,
     progressions: [[Imaj7, [2, 'maj'], Imaj7, [2, 'maj']], [IVmaj7, Imaj7, IVmaj7, [7, 'sus4']], [Imaj7, vi7, IVmaj7, [0, 'add9']]],
   },
   autumn: {
     // the key is the minor tonic here: i9, IV7 (the dorian colour), bVII, bIIImaj7
-    bpm: 62, keys: [50, 52, 55], scale: DORIAN, accomp: 'rhodes', melody: 'rhodes', bass: true, bells: false, bright: 0.38, rest: 0.35, groove: 'brushes',
+    bpm: 62, keys: [50, 52, 55], scale: DORIAN, accomp: 'rhodes', melody: 'rhodes', bass: true, bells: false, bright: 0.38, rest: 0.35, groove: 'brushes', home: [0, 'min9'],
     progressions: [
       [[0, 'min9'], [5, 'dom7'], [0, 'min7'], [5, 'dom7']],
       [[0, 'min9'], [10, 'maj'], [3, 'maj7'], [7, 'min7']],
@@ -80,7 +88,7 @@ const STYLES: Record<Season, Style> = {
     ],
   },
   winter: {
-    bpm: 62, keys: [60, 62, 65], scale: MAJOR, accomp: 'musicBox', melody: 'bell', bass: false, bells: true, bright: 0.5, rest: 0.3,
+    bpm: 62, keys: [60, 62, 65], scale: MAJOR, accomp: 'musicBox', melody: 'bell', bass: false, bells: true, bright: 0.5, rest: 0.3, home: I,
     progressions: [[I, vi, IV, V], [I, [4, 'min'], IV, V7], [[0, 'add9'], IV, [9, 'min'], V], [IV, I, [2, 'min'], V7]],
   },
 };
@@ -159,6 +167,11 @@ const CAROLS: Carol[] = [
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+/** the pitch nearest m whose pitch class is in the chord */
+const nearestChordTone = (m: number, chord: number[]) => {
+  for (const d of [0, -1, 1, -2, 2]) if (chord.some((c) => (((m + d - c) % 12) + 12) % 12 === 0)) return m + d;
+  return m;
+};
 
 export class Music {
   private ins: Instruments;
@@ -178,8 +191,32 @@ export class Music {
   private sectionCount = 0;
   private running = false;
 
+  private accompOut: StereoPannerNode;
+  private melodyOut: StereoPannerNode;
+  private echo: DelayNode;
+
   constructor(private ctx: AudioContext, noise: AudioBuffer, private out: AudioNode) {
     this.ins = new Instruments(ctx, noise);
+    this.accompOut = ctx.createStereoPanner();
+    this.accompOut.pan.value = -0.3;
+    this.accompOut.connect(out);
+    this.melodyOut = ctx.createStereoPanner();
+    this.melodyOut.pan.value = 0.25;
+    this.melodyOut.connect(out);
+    // the melody's echo, answering from the other side, darker each repeat
+    this.echo = ctx.createDelay(2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 2400;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.3;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.2;
+    const side = ctx.createStereoPanner();
+    side.pan.value = -0.5;
+    this.melodyOut.connect(this.echo);
+    this.echo.connect(lp).connect(fb).connect(this.echo);
+    lp.connect(wet).connect(side).connect(out);
   }
 
   setMood(season: Season, time: TimeOfDay) {
@@ -226,6 +263,7 @@ export class Music {
     this.prog = pick(this.style.progressions);
     this.sectionBars = this.prog.length * 2 * (Math.random() < 0.5 ? 2 : 3);
     this.makeMotif();
+    this.echo.delayTime.setTargetAtTime(0.75 * this.beat, this.ctx.currentTime, 0.2);
     // a breath between sections (shorter when the scene just changed)
     this.nextTime = Math.max(this.nextTime, this.ctx.currentTime) + (fromChange ? 0.5 : rand(2, 6) * this.beat);
   }
@@ -268,7 +306,9 @@ export class Music {
   private scheduleBar(t: number) {
     const st = this.style;
     const b = this.beat;
-    const chord = this.prog[Math.floor(this.bar / 2) % this.prog.length];
+    // the last two bars of a section come home to the tonic chord
+    const cadence = this.bar >= this.sectionBars - 2;
+    const chord = cadence ? st.home : this.prog[Math.floor(this.bar / 2) % this.prog.length];
     const root = this.key + chord[0];
     const notes = this.chordNotes(chord, this.key);
     const o = this.out;
@@ -298,17 +338,21 @@ export class Music {
       this.playAccomp(tt, m, v, b * 1.5);
     }
     // melody: the motif on the first bar of each pair, varied on repeats
-    if (first && Math.random() > st.rest) {
+    if (first && (cadence || Math.random() > st.rest)) {
       const variation = (this.bar / 2) % 4;
       const scale = st.scale;
       const center = this.key + 12 + (this.night ? -5 : 0);
-      for (const ev of this.motif) {
-        if (variation === 3 && Math.random() < 0.3) continue; // thin out on the 4th pass
+      const last = this.motif.length - 1;
+      for (const [k, ev] of this.motif.entries()) {
+        if (cadence && ev.beat >= 4) break;
+        if (variation === 3 && k !== last && Math.random() < 0.3) continue; // thin out on the 4th pass
         let deg = ev.step + (variation === 2 ? 2 : 0);
         // pull toward a chord tone on strong beats
         if (ev.beat % 2 === 0) deg = Math.round(deg / 2) * 2;
         const oct = Math.floor(deg / scale.length);
-        const m = center + scale[((deg % scale.length) + scale.length) % scale.length] + 12 * oct;
+        let m = center + scale[((deg % scale.length) + scale.length) % scale.length] + 12 * oct;
+        // a phrase ends on a note of the chord under it
+        if (k === last) m = nearestChordTone(m, notes);
         const at = t + ev.beat * b + rand(-0.012, 0.012);
         // spring: a quick bird-like trill into some of the longer notes
         if (st.trills && ev.len >= 1 && Math.random() < 0.3) {
@@ -316,6 +360,8 @@ export class Music {
         }
         this.playMelody(at, m, vel * rand(0.8, 1), ev.len * b * 0.95);
       }
+      // the cadence: come to rest on the tonic, held through the next bar
+      if (cadence) this.playMelody(t + 4 * b, this.key + 12, vel * 0.85, 4 * b * 0.95);
     }
     // summer: a lazy shaker on the off-beats and a hand drum on 1 and the
     // "and" of 2; autumn: brushes swept on 2 and 4
@@ -363,7 +409,7 @@ export class Music {
   }
 
   private playAccomp(t: number, m: number, v: number, dur: number) {
-    const o = this.out;
+    const o = this.accompOut;
     switch (this.style.accomp) {
       case 'piano': return this.ins.piano(t, m, v * 0.7, dur, o);
       case 'guitar': return this.ins.guitar(t, m, v * 0.6, dur, o);
@@ -373,7 +419,7 @@ export class Music {
   }
 
   private playMelody(t: number, m: number, v: number, dur: number) {
-    const o = this.out;
+    const o = this.melodyOut;
     // each season keeps its own voice at night too (it just plays lower and softer)
     const inst = this.style.melody;
     switch (inst) {
