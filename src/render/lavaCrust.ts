@@ -1,24 +1,23 @@
-// The skin on a lava puddle. Exposed melt radiates and cools; within a few
-// seconds solid crust grows over a surface that sits still (pāhoehoe skins
-// over fast). The crust is rigid: it breaks into plates, and the plates ride
-// on the melt like rafts, carried by its flow. Wherever the melt is
-// stretched the plates pull apart and the glowing interior shows between
-// them, as on a lava lake.
+// The skin on the melt of a lava puddle. Exposed melt radiates and cools;
+// within a few seconds a thin, darker skin forms over a surface that sits
+// still, and the flow tears it open again. The skin is still liquid and
+// streams with the melt. The solid crust plates that ride on top are rigid
+// bodies of their own (lavaPlates.ts).
 //
 // Per simulation cell:
 //   R   crust cover, 0 (bare, glowing melt) to 1 (closed crust)
 //   GB  material coordinates [m]: where this bit of surface started. They
-//       are carried with the flow, so the plate pattern drawn on them
-//       (water.ts) moves with the melt instead of sitting still on screen
+//       are carried with the flow, so the glow pattern drawn on them
+//       (water.ts) streams with the melt instead of sitting still on screen
 //
 //   advection  both are moved semi-Lagrangian with the depth-averaged
 //              velocity u
 //   growth     dc/dt = (c_eq − c) / t_crust; c_eq ≈ 0.65 at rest (convection
-//              keeps the plates from welding shut) and lower over slow-
+//              keeps the skin from closing) and lower over slow-
 //              drifting hot spots where fresh melt wells up
 //   tearing    dc/dt = −c · (|S| / 1.5 s⁻¹ + |u| / 0.08 m/s)
 // with |S| the strain rate. Where the melt lies bare, the coordinates are
-// reset to the cell's own position, so new crust forms new plates.
+// reset to the cell's own position.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import type { ShallowWaterSolver } from '../physics/solver';

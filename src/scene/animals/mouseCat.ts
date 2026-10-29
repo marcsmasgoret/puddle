@@ -1,5 +1,5 @@
-// The secret: now and then (every few minutes, never on a schedule you can
-// count on) a small mouse pops out somewhere fitting for the place, sniffs,
+// The secret: now and then (every minute or two, never on a schedule you
+// can count on) a small mouse pops out somewhere fitting for the place, sniffs,
 // and scurries off to a hiding spot. Sometimes a tabby cat has spotted it:
 // it creeps in, belly low, wiggles its hips, pounces, gives a bounding
 // chase, and is always just too late. The mouse vanishes into its hole; the
@@ -42,7 +42,7 @@ export class MouseCat {
   private spots: MouseSpots | null = null;
   private walkable: (x: number, z: number) => boolean = () => true;
   private snowy = false;
-  private next = 60 + Math.random() * 120;
+  private next = 25 + Math.random() * 35;
   private t = 0;
 
   private mState: MouseState = 'hidden';
@@ -124,7 +124,7 @@ export class MouseCat {
   }
 
   /** Start a visit now (for testing); chase decides whether the cat comes. */
-  trigger(chase = Math.random() < 0.45) {
+  trigger(chase = Math.random() < 0.75) {
     if (!this.spots || !this.cat || !this.mouse) return;
     const [fx, fz] = this.spots.from;
     const [tx, tz] = this.spots.to;
@@ -183,10 +183,12 @@ export class MouseCat {
     if (this.mState === 'hidden' && this.cState === 'away') {
       this.next -= dt;
       if (this.next <= 0 && this.spots) {
-        this.next = 150 + Math.random() * 240;
+        this.next = 60 + Math.random() * 75;
         this.trigger();
       }
-      return;
+      // a visit that just began falls through, so both animals are posed
+      // before they are first drawn (or they flash up where they were left)
+      if (this.mState === 'hidden' && this.cState === 'away') return;
     }
     if (this.mState !== 'hidden') this.updateMouse(dt);
     if (this.cState !== 'away') this.updateCat(dt);

@@ -13,13 +13,13 @@ export type LocationId = 'forest' | 'beach' | 'europe' | 'city' | 'backyard' | '
 
 export const LOCATIONS: [LocationId, string][] = [
   ['forest', 'Forest'],
-  ['beach', 'PEI dunes'],
   ['europe', 'Beach'],
   ['city', 'City street'],
   ['backyard', 'Backyard pool'],
   ['dock', 'Cottage dock'],
   ['highpark', 'High Park'],
   ['lionsgate', 'Lions Gate'],
+  ['beach', 'PEI dunes'],
   ['algonquin', 'Algonquin'],
 ];
 

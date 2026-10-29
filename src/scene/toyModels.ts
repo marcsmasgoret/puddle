@@ -121,7 +121,7 @@ function bobber() {
   const top = new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
   const bottom = new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
   const band = new THREE.CylinderGeometry(r * 1.01, r * 1.01, r * 0.18, 24, 1, true);
-  const stick = new THREE.CylinderGeometry(0.0012, 0.0016, 0.022, 8);
+  const stick = new THREE.CylinderGeometry(0.0018, 0.0024, 0.022, 8);
   stick.translate(0, r + 0.009, 0);
   const geo = mergeGeometries([tinted(top, '#e8392f'), tinted(bottom, '#f4f1ea'), tinted(band, '#1f1f24'), tinted(stick, '#e8392f')]);
   const mat = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.3, clearcoat: 0.8 });

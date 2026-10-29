@@ -1,16 +1,18 @@
 // Fishing: nothing to catch, just a bobber to watch.
 //
-// Tap the water to cast. The bobber flies from a rod tip just off-screen on a
-// ballistic arc, lands with a little splash, and then floats as a real rigid
+// Tap the water to cast. The rod swings back and whips forward; at the
+// release the bobber leaves the rod tip on a ballistic arc, paying out line
+// behind it, lands with a little splash, and then floats as a real rigid
 // body (same physics as the toys): it rides passing waves and drifts with
 // the current. Now and then something nibbles: a short downward tug on the
-// line (a pull of ~0.02 N, a few grams-force), which dips the bobber and
+// line (a pull of ~0.07 N, several grams-force), which dips the bobber and
 // sends out its own rings. Rarely there is a proper bite that pulls it under
 // for a moment. Tap anywhere off the water to reel in.
 import * as THREE from 'three';
 import type { Toys } from './toys';
 
 const FLIGHT_TIME = 0.75; // [s]
+const RELEASE = 0.3; // [s] after the tap: the rod is whipping forward (rod.ts)
 
 export class Fishing {
   private bobber: ReturnType<Toys['spawn']> | null = null;
@@ -21,6 +23,8 @@ export class Fishing {
   private tugForce = 0;
   private queue: { delay: number; dur: number; force: number }[] = [];
   private reeling = false;
+  /** a cast in its wind-up: where it will land, and time to the release */
+  private pending: { target: THREE.Vector3; t: number } | null = null;
   active = false;
 
   constructor(
@@ -49,7 +53,7 @@ export class Fishing {
 
   /** how hard the line is pulling now (0…1), for the rod's bend */
   get load() {
-    return this.tug > 0 ? Math.min(1, this.tugForce * 20) : this.reeling ? 0.5 : 0.1;
+    return this.tug > 0 ? Math.min(1, this.tugForce * 6) : this.reeling ? 0.5 : 0.1;
   }
 
   onCast: () => void = () => {};
@@ -57,8 +61,12 @@ export class Fishing {
   cast(x: number, z: number) {
     this.onCast();
     this.reelIn(true);
+    this.pending = { target: new THREE.Vector3(x, 0.018, z), t: RELEASE };
+  }
+
+  /** The release: the bobber leaves the rod tip on an arc to the target. */
+  private release(target: THREE.Vector3) {
     const tip = this.rodTip();
-    const target = new THREE.Vector3(x, 0.012, z);
     const T = FLIGHT_TIME;
     const g = 9.81;
     const toy = this.toys.spawn('bobber', tip);
@@ -74,6 +82,7 @@ export class Fishing {
 
   /** Reel in: the bobber is pulled back to the rod and disappears. */
   reelIn(immediate = false) {
+    if (immediate) this.pending = null;
     if (!this.bobber) return;
     if (immediate) {
       this.toys.remove(this.bobber);
@@ -97,6 +106,10 @@ export class Fishing {
   }
 
   update(dt: number) {
+    if (this.pending && (this.pending.t -= dt) <= 0) {
+      this.release(this.pending.target);
+      this.pending = null;
+    }
     if (!this.bobber) return;
     if (!this.toys.toys.includes(this.bobber)) {
       this.bobber = null;
@@ -112,7 +125,7 @@ export class Fishing {
         const n = bite ? 1 : 1 + Math.floor(Math.random() * 3);
         let delay = 0;
         for (let k = 0; k < n; k++) {
-          this.queue.push({ delay, dur: bite ? 0.7 : 0.12 + Math.random() * 0.1, force: bite ? 0.06 : 0.015 + Math.random() * 0.015 });
+          this.queue.push({ delay, dur: bite ? 0.7 : 0.12 + Math.random() * 0.1, force: bite ? 0.2 : 0.05 + Math.random() * 0.05 });
           delay += 0.25 + Math.random() * 0.35;
         }
         this.nextNibble = 8 + Math.random() * 18;
@@ -130,15 +143,19 @@ export class Fishing {
 
     if (this.reeling && b.pos.distanceTo(this.rodTip()) < 0.15) this.reelIn(true);
 
-    // the line: a sagging curve from the rod tip to the bobber's eye
+    // the line: a sagging curve from the rod tip to the bobber's eye. In
+    // flight it pays out nearly straight behind the bobber; once it is down
+    // the line sags and lies on the water near the bobber. Both ends are
+    // always pinned, to the tip and to the bobber.
     const tip = this.rodTip();
-    const end = b.pos.clone().add(new THREE.Vector3(0, 0.02, 0));
-    const slack = b.airborne ? 0.05 : 0.18;
+    const end = new THREE.Vector3(0, b.def.radius + 0.02, 0).applyQuaternion(b.quat).add(b.pos);
+    const slack = b.airborne ? 0.04 : 0.18;
+    const floor = Math.min(end.y, 0.003);
     for (let k = 0; k < 32; k++) {
       const t = k / 31;
       const p = tip.clone().lerp(end, t);
       p.y -= Math.sin(Math.PI * t) * slack * tip.distanceTo(end) * 0.5;
-      p.y = Math.max(p.y, end.y - 0.01);
+      if (k > 0 && k < 31) p.y = Math.max(p.y, floor);
       p.toArray(this.positions, k * 3);
     }
     this.line.geometry.attributes.position.needsUpdate = true;

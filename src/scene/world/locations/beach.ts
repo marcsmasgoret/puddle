@@ -43,7 +43,8 @@ const def: LocationDef = {
       const alpha = new THREE.DataTexture(fade, 1, 32);
       alpha.magFilter = alpha.minFilter = THREE.LinearFilter;
       alpha.needsUpdate = true;
-      const swash = new THREE.Mesh(new THREE.PlaneGeometry(300, 3), new THREE.MeshStandardMaterial({ color: winter ? '#8a7a74' : '#7c3b26', alphaMap: alpha, roughness: 0.3, transparent: true, depthWrite: false }));
+      // damp, not glassy: a low sun should not mirror off it like the sea
+      const swash = new THREE.Mesh(new THREE.PlaneGeometry(300, 3), new THREE.MeshStandardMaterial({ color: winter ? '#8a7a74' : '#7c3b26', alphaMap: alpha, roughness: 0.75, transparent: true, depthWrite: false }));
       swash.rotation.x = -Math.PI / 2;
       swash.position.set(-140, 0.006, -7.6);
       g.add(swash);
@@ -71,13 +72,19 @@ const def: LocationDef = {
     g.add(marram(tufts, grassCol, 7));
     // dune fences leaning in the sand
     g.add(duneFence(-9.5, -2.5, -15, -8.5, h));
-    // red sandstone cliffs running away on the right, rising toward the
-    // point, with a sea stack or two and fallen blocks at their foot
+    // red sandstone cliffs running away on the right, rising out of the
+    // beach as a grassy bank and climbing toward the point, with a sea
+    // stack or two and fallen blocks at their foot
     const rock = winter ? '#9a5a48' : '#a8492e';
     const cliffAt = (z: number) => 10 + 0.42 * -z + 3 * Math.sin(z * 0.03);
     const pts: [number, number][] = [];
     for (let z = -5; z >= -235; z -= 10) pts.push([cliffAt(z), z]);
-    const heightAt = (t: number) => 3.5 + 9.5 * Math.min(1, t * 1.3) + 1.2 * Math.sin(t * 17);
+    const heightAt = (t: number) => {
+      // the first ~20 m climbs from the sand, so the clifftop land meets the
+      // beach instead of ending in mid-air
+      const rise = THREE.MathUtils.smoothstep(t, 0, 0.09);
+      return 0.15 + rise * (3.35 + 9.5 * Math.min(1, t * 1.3) + 1.2 * Math.sin(t * 17));
+    };
     g.add(cliffLine({ points: pts, height: heightAt, rock, band: '#c9673f', pale: '#d9a27a', grass: winter ? '#e8ecef' : '#6f8a3c', seed: 3 }));
     for (const [z, h, w, k] of [[-88, 5.5, 2.6, 1], [-150, 8, 3.6, 2], [-158, 4, 2.2, 3]]) {
       const st = seaStack(h, w, rock, '#c9673f', winter ? '#e8ecef' : '#6f8a3c', k);

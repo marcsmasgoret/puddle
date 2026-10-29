@@ -140,6 +140,7 @@ export class Wildlife {
   private ready = new Set<Kind>();
   private specs = new Map<Kind, AnimalSpec>();
   private walkable: (x: number, z: number) => boolean = () => true;
+  private now = 0;
 
   constructor() {
     this.group.add(this.rings.group);
@@ -188,11 +189,15 @@ export class Wildlife {
 
   private add(a: Actor | null) {
     if (!a) return;
+    // place and pose it before it is first drawn: an animal's root starts at
+    // the origin, right in front of the camera, and would flash up there
+    a.update(1 / 60, this.now);
     this.actors.push(a);
     this.group.add(a.obj);
   }
 
   update(dt: number, t: number) {
+    this.now = t;
     this.rings.update(dt);
     this.actors = this.actors.filter((a) => {
       const keep = a.update(dt, t);

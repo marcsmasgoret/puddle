@@ -28,15 +28,6 @@ body {
   touch-action: none;
 }
 
-#build {
-  position: fixed;
-  right: 12px;
-  bottom: calc(10px + env(safe-area-inset-bottom));
-  font: 11px ui-monospace, Menlo, Consolas, monospace;
-  color: rgba(255, 255, 255, 0.55);
-  pointer-events: none;
-}
-
 /* ── settings button + frosted glass panel ─────────────────────────────── */
 .ui-button {
   position: fixed;

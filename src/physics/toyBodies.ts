@@ -65,7 +65,7 @@ export const SAIL = {
   mass: 0.045,
 };
 
-export const BOBBER = { r: 0.012, mass: 0.0036, com: new THREE.Vector3(0, -0.003, 0) };
+export const BOBBER = { r: 0.018, mass: 0.0122, com: new THREE.Vector3(0, -0.0045, 0) };
 export const RCBOAT = { length: 0.2, beam: 0.065, depth: 0.04, mass: 0.06, com: new THREE.Vector3(-0.01, 0.012, 0) };
 /** half-beam of the RC boat's V hull at height y and station x */
 export function rcHalfBeam(x: number, y: number) {
@@ -79,7 +79,7 @@ export function rcHalfBeam(x: number, y: number) {
 export const DONUT = { R: 0.06, r: 0.025, mass: 0.012, com: new THREE.Vector3(0, 0.025, 0) };
 
 /** area each toy shows to the wind above the water [m²] (sail + hull side) */
-export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0003, donut: 0.0075, rcboat: 0.004 };
+export const WINDAGE: Record<ToyKind, number> = { duck: 0.0032, paperBoat: 0.0035, sailboat: 0.011, bobber: 0.0007, donut: 0.0075, rcboat: 0.004 };
 
 export function bodyDef(kind: ToyKind): BodyDef {
   if (kind === 'bobber') {

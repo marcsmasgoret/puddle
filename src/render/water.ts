@@ -181,8 +181,17 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
         float Hp = texture2D(uShape, (P.xz - uOrigin) / uExtent).g;
         P = vWPos + rd * ((vWPos.y + Hp) / max(-rd.y, 0.15));
         vec2 refrUv = clamp(toScreen(P), 0.001, 0.999);
-        // something above the surface at that pixel: refraction is invalid
-        if (texture2D(uSceneDepth, refrUv).r < gl_FragCoord.z) refrUv = screenUv;
+        // something above the surface there (a floating toy, a leaf): that
+        // sample is invalid. The check looks a couple of pixels around the
+        // sample too: an object's anti-aliased edge pixels carry the colour
+        // of the object but the depth of what is behind it, and sampling
+        // them would draw a copy of its outline in the water behind it
+        // that shimmers as the surface moves
+        vec2 px = 2.0 / uResolution;
+        float zMin = min(texture2D(uSceneDepth, refrUv).r,
+                     min(min(texture2D(uSceneDepth, refrUv + vec2(px.x, 0.0)).r, texture2D(uSceneDepth, refrUv - vec2(px.x, 0.0)).r),
+                         min(texture2D(uSceneDepth, refrUv + vec2(0.0, px.y)).r, texture2D(uSceneDepth, refrUv - vec2(0.0, px.y)).r)));
+        if (zMin < gl_FragCoord.z) refrUv = screenUv;
         float L = length(P - vWPos);
 
         vec3 col;
@@ -228,55 +237,36 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           float wrap = clamp((dot(n, uSunDir) + 0.3) / 1.3, 0.0, 1.0);
           vec3 diffuse = uAlbedo * (uSunColor * wrap * 0.28 + uAmbient * 0.42);
           diffuse *= 1.0 + 0.1 * jam - 0.12 * grain;
+          // a hollow pressed into the cream sees less of the sky: its walls
+          // shade each other (a finger-deep dent goes ~40 % darker; ripple
+          // troughs a millimetre deep barely change)
+          float hollow = clamp(-s.r / 0.02, 0.0, 1.0);
+          float ao = 1.0 - 0.55 * hollow * (2.0 - hollow);
+          diffuse *= ao;
           float Ds = ggx(n, Hv, rough);
           vec3 spec = uSunColor * fresnel(max(dot(V, Hv), 0.0), uIor) * min(Ds * geom, 40.0) * NdL * (1.0 - 0.9 * jam);
-          vec3 body = mix(diffuse, refl, min(F * 1.6, 1.0));
+          vec3 body = mix(diffuse, refl * ao, min(F * 1.6, 1.0));
           // a film thinner than the scattering length shows the bed through it
           float T = exp(-uExtinction * depth);
           col = mix(body, texture2D(uSceneColor, refrUv).rgb, T) + spec;
         } else if (uMode == 3) {
           // ── lava ──
-          // rafts of solid crust floating on glowing melt. The plate pattern
-          // lives on material coordinates carried with the flow (lavaCrust.ts),
-          // so the plates drift, turn and pull apart with the melt
+          // the glowing melt. Its pattern lives on material coordinates
+          // carried with the flow (lavaCrust.ts), so it streams like the
+          // liquid it is; where it lies still a thin, darker skin cools on
+          // it. The solid crust plates ride on top (lavaPlates.ts).
           vec4 cr = texture2D(uCrust, vUv);
           float crust = cr.r;
           vec2 mc = cr.gb;
-          vec2 q = mc * 11.0 + vec2(vnoise(mc * 4.0), vnoise(mc * 4.0 + 3.0)) * 1.2;
-          vec3 vc = voronoi(q);
-          float edge = vc.y - vc.x; // distance to the plate's border (cell units)
-          // thinner crust: wider cracks between plates, and some plates gone
-          float gap = mix(0.03, 0.62, smoothstep(0.15, 0.95, 1.0 - crust));
-          float present = step(fract(vc.z * 7.31) * 0.55, crust);
-          float aa = fwidth(edge) * 1.2 + 1e-4;
-          float solid = smoothstep(gap - aa, gap + aa, edge) * present;
-          // the melt: flowing incandescent rock, cooler (darker, redder)
-          // in streaks and in a skin along the edge of each plate
           float churn = fbm(mc * 7.0 + vec2(uTime * 0.12, -uTime * 0.08));
           float streak = fbm(mc * vec2(18.0, 6.0) + churn * 1.5 - uTime * 0.05);
-          float rim = present * (1.0 - smoothstep(0.0, 0.16, edge - gap + 0.06));
-          float T = uLavaT - 190.0 * (1.0 - churn) - 200.0 * streak * streak - 260.0 * rim - 100.0 * crust;
+          float T = uLavaT - 190.0 * (1.0 - churn) - 200.0 * streak * streak - 330.0 * crust;
           // radiance ∝ T⁴ (Stefan–Boltzmann), relative to 1420 K
           float I = pow(T / 1420.0, 4.0) * 2.1;
           vec3 melt = blackbody(T) * I;
           // the liquid surface is smooth: a faint glassy sheen of the sky
           melt += refl * fresnel(cosV, 1.6) * 0.25 + uSunColor * min(D * geom, 30.0) * NdL * 0.05;
-          // the plates: dark glassy basalt, each tilted a little its own way
-          // so they catch the light as separate solid pieces, ropy on top
-          float tilt = vc.z * 6.283;
-          vec3 nc = normalize(n + vec3(cos(tilt), 0.0, sin(tilt)) * 0.12
-                              + vec3(vnoise(mc * 60.0) - 0.5, 0.0, vnoise(mc * 60.0 + 7.0) - 0.5) * 0.12);
-          // raised edges: a bevel facing out of the plate
-          float bevel = 1.0 - smoothstep(gap, gap + 0.1, edge);
-          float NdLc = max(dot(nc, uSunDir), 0.0);
-          float Fc = fresnel(clamp(dot(nc, V), 0.0, 1.0), 1.55);
-          vec3 Hc = normalize(uSunDir + V);
-          float Dc = ggx(nc, Hc, 0.35);
-          vec3 crustCol = uCrustColor * (uAmbient * 0.6 + uSunColor * NdLc * 0.5) * (1.0 + 0.25 * (vnoise(mc * 25.0) - 0.5))
-                        + refl * Fc * 0.3 + uSunColor * min(Dc * geom, 20.0) * NdLc * 0.08;
-          // hot underside showing at the plate's bevelled edge; young plates glow dull red
-          crustCol += blackbody(1000.0) * (bevel * 0.35 + 0.1 * smoothstep(0.75, 1.0, fract(vc.z * 13.7)) * (1.0 - crust));
-          col = mix(melt, crustCol, solid);
+          col = melt;
           edgeBand = 0.002;
         } else {
           // ── dielectric ──

@@ -62,7 +62,7 @@ export class Rod {
   }
 
   nibble(strength: number) {
-    this.dip = Math.min(1, this.dip + strength * 25);
+    this.dip = Math.min(1, this.dip + strength * 7);
   }
 
   /** Hold the rod from off-screen, bottom right; returns the tip. */

@@ -22,6 +22,7 @@ import type { Weather } from './palettes';
 import type { Load } from '../../physics/pressureMap';
 
 const RHO_AIR = 1.204;
+const TOY_SHELTER = 0.36;
 
 export class WeatherSystem {
   kind: Weather = 'clear';
@@ -71,8 +72,9 @@ export class WeatherSystem {
     this.kind = kind;
     this.rain.visible = kind === 'rain';
     this.snow.visible = kind === 'snow';
-    // wind blows from the left, slightly toward us; stormy weather is breezy too
-    const U = kind === 'wind' ? 7 : kind === 'rain' ? 2.5 : kind === 'snow' ? 1.5 : 0.6;
+    // wind blows from the left, slightly toward us; stormy weather is breezy
+    // too, and a clear day is nearly calm (light air) so toys can linger
+    const U = kind === 'wind' ? 7 : kind === 'rain' ? 2.5 : kind === 'snow' ? 1.5 : 0.15;
     this.wind.set(U * 0.95, U * 0.3);
     this.gusts = [];
     const n = kind === 'wind' ? 5 : kind === 'rain' ? 2 : 0;
@@ -99,10 +101,15 @@ export class WeatherSystem {
     };
   }
 
-  /** wind drag on the part of a toy that sticks out of the water [N] */
+  /**
+   * Wind drag on the part of a toy that sticks out of the water [N]. The
+   * wind speed is the one at ~2 m; a toy sits ~5 cm up, inside the surface
+   * boundary layer, where the log profile u ∝ ln(z / z₀) (z₀ ≈ 0.2 mm over
+   * water) gives ~60 % of it, so ~0.36 of the drag.
+   */
   windForce(area: number) {
     const U = this.wind.length();
-    return new THREE.Vector3(this.wind.x, 0, this.wind.y).multiplyScalar(0.5 * RHO_AIR * 1.0 * area * U);
+    return new THREE.Vector3(this.wind.x, 0, this.wind.y).multiplyScalar(0.5 * RHO_AIR * 1.0 * area * U * TOY_SHELTER);
   }
 
   /** gust pressure patches for this frame */

@@ -128,7 +128,7 @@ The simulation runs in real SI units at real size, so no hidden scaling is appli
 | Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) | ≈ 100 | 0.6 (internal damping) |
 | Surface tension $\sigma$ (N/m) | 0.07274 | 0.063 | 0.4854 | ≈ 0.072 | ≈ 0.35 | ≈ 0.05 |
 | Elasticity | none | none | none | none | none | shear modulus $G \approx 1$ kPa (§4.2) |
-| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension | blackbody glow under a cooling crust (§4.3) | $n = 1.34$, red dye absorption |
+| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension | blackbody glow between rigid crust plates (§4.3) | $n = 1.34$, red dye absorption |
 
 **Sources:**
 - Water: IAPWS R1-76(2014), IAPWS 2008, IAPWS-95; Pope & Fry 1997.
@@ -169,7 +169,8 @@ $$\dot\gamma = \sqrt{(3|\bar{\mathbf u}|/h)^2 + |S|^2}$$
 
 **Result:**
 - A hard slap shears the layer far above $\dot\gamma_c$, the viscosity jumps to its ceiling, the implicit bed friction stops the flow within a millisecond, and the surface barely ripples. A hand-sized slap at full strength moves it by about 0.2 mm, compared with 4 mm for water.
-- A slow press keeps $\dot\gamma$ low, so the finger sinks in.
+- A slow press keeps $\dot\gamma$ low, so the finger sinks in. A dense suspension is dragged along over a zone several fingertips wide, so it sinks into a wide funnel (§5.3).
+- Pulled out quickly, it jams: the hole keeps its shape for about 0.4 s, then the suspension relaxes and the hole oozes shut over a second or so. It never clings to the finger the way honey does.
 - When oobleck is hit it goes matte for a moment: the jammed grains poke through the surface (dilatancy). The renderer shows this, including a jammed patch that spreads wider than the impactor (Waitukaitis & Jaeger 2012).
 
 ### 4.2 Red jello: an elastic gel
@@ -180,13 +181,15 @@ $$\frac{\partial \mathbf u}{\partial t} \mathrel{+}= -\frac{3G}{\rho h^2}\,\bold
 
 so each column wobbles at $\omega = \sqrt{3G/\rho}/h \approx 70$ rad/s (≈ 11 Hz) in 2.5 cm, disturbances spread as shear waves at $c_s = \sqrt{G/\rho} \approx 1$ m/s, and the viscous term damps the jiggle in about a second. The stability bound adds $3G/(\rho h_{\min}^2) + 8G/(\rho\Delta x^2)$ to $\omega_{\max}^2$ (§2.7).
 
-### 4.3 Lava: glow and crust
+### 4.3 Lava: glow, skin and crust plates
 
-Lava runs through the same equations with its own properties: dense, very viscous (so its waves are overdamped, like honey's) and with a high surface tension. What is new is the surface. Exposed melt at about 1420 K glows: its colour is blackbody radiation (by Wien's law the peak is at 2.0 µm, in the infrared, so only the red end reaches the visible) and its brightness follows the Stefan–Boltzmann $T^4$. The surface radiates and cools, and a dark glassy crust grows over still melt in seconds; wherever the melt moves or stretches, the crust tears. A crust field $c \in [0, 1]$ per cell models this:
+Lava runs through the same equations with its own properties: dense, very viscous (so its waves are overdamped, like honey's) and with a high surface tension. What is new is the surface. Exposed melt at about 1420 K glows: its colour is blackbody radiation (by Wien's law the peak is at 2.0 µm, in the infrared, so only the red end reaches the visible) and its brightness follows the Stefan–Boltzmann $T^4$. The surface radiates and cools, and a thin dark skin grows over still melt in seconds; wherever the melt moves or stretches, the skin tears. The skin is still liquid and streams with the melt. A skin field $c \in [0, 1]$ per cell models this:
 
 $$\frac{dc}{dt} = \frac{c_{eq} - c}{t_{crust}} - c\left(\frac{|\mathbf u|}{0.02\ \text{m/s}} + \frac{|S|}{2\ \text{s}^{-1}}\right)$$
 
 with $t_{crust} \approx 2.5$ s and $c_{eq} < 1$ over slowly drifting convective hot spots, where fresh melt keeps welling up.
+
+On top of the melt ride **plates of solid crust**, as on a lava lake. They start as a Voronoi tiling of the pool (cooling cracks meet at roughly 120°), each cell drawn in from its neighbours to open a glowing crack. Each plate is a rigid body: it keeps its outline and moves only as a whole, relaxing over 0.25 s toward the melt velocity under its centre and toward the melt's local spin $\Omega = \tfrac12(\partial u/\partial z - \partial v/\partial x)$, both read back from the GPU. Plates do not pass through each other: overlapping plates are pushed apart and lose their closing speed, and plates shoved together hard ride up over one another. A gentle repulsion between neighbours spreads the plates back over open melt, so a slap opens a glowing patch that slowly closes again. Each plate rides the surface as a rigid plane fitted to $\eta$ across its footprint, so it rocks on a passing wave rather than bending with it.
 
 ---
 
@@ -332,7 +335,7 @@ A 20 cm toy speedboat, floating like the other toys, with a propeller and a rudd
 
 - **Wind stress.** Wind exerts a mean surface stress $\tau = \rho_{\text{air}}C_DU^2$ with $C_D\approx1.3\times10^{-3}$, the standard neutral drag coefficient of a water surface. Spread over the layer it slowly drives a drift current.
 - **Gusts.** Turbulent gusts press on the water as patches of fluctuating pressure (a few Pa) moving with the wind. This is **Phillips' (1957) mechanism** for how wind first raises ripples, and the "cat's paws" crossing the puddle are real solver waves.
-- **Wind on toys.** Toys also feel air drag, $\tfrac12\rho_{\text{air}}C_dA U^2$, on the area above water, so the sailboat drifts fastest.
+- **Wind on toys.** Toys also feel air drag, $\tfrac12\rho_{\text{air}}C_dA U^2$, on the area above water, so the sailboat drifts fastest. The wind speed $U$ is the one at about 2 m; a toy sits about 5 cm up, inside the surface boundary layer, where the log profile $u \propto \ln(z/z_0)$ ($z_0 \approx 0.2$ mm over water) gives about 60 % of it, so the drag is taken as 0.36 of the free-stream value. A clear day is nearly calm (0.15 m/s), so toys linger near the middle.
 - **Autumn leaves** fall, land, and float as passive tracers. They ride $\eta$ and are carried by the depth-averaged current, plus about 3% of the wind speed (the usual surface-drift rule of thumb).
 - **Winter ice.** The puddle's shallow edge loses heat fastest, so a thin band of ice grows in from the shore.
   - Only on water: honey doesn't freeze, and mercury not until −39 °C.

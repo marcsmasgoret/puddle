@@ -28,21 +28,29 @@ function wetBand(at: [number, number], angle: number, width: number) {
   const geo = new THREE.PlaneGeometry(width, 3.2);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, 1.4);
-  const wet = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#9e8766', alphaMap: alpha, transparent: true, roughness: 0.35, depthWrite: false }));
+  const wet = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#9e8766', alphaMap: alpha, transparent: true, roughness: 0.75, depthWrite: false }));
   wet.position.set(at[0], 0.035, at[1]);
   wet.rotation.y = angle;
   wet.receiveShadow = true;
   return wet;
 }
 
-/** a headland as a height field with sand, rock and scrub by height and slope */
+/**
+ * A headland as a height field with sand, rock and scrub by height and slope.
+ * The ground sinks below the sea toward every edge of the patch, so the
+ * hills always run down into the water and the patch never ends in mid-air.
+ */
 function headland(h: (x: number, z: number) => number, x0: number, x1: number, z0: number, z1: number, haze: THREE.Color, winter: boolean) {
-  const nx = 160, nz = 90;
+  const nx = 180, nz = 90;
   const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0, nx, nz);
   g.rotateX(-Math.PI / 2);
   g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
   const p = g.attributes.position as THREE.BufferAttribute;
-  for (let k = 0; k < p.count; k++) p.setY(k, h(p.getX(k), p.getZ(k)) - 0.3);
+  for (let k = 0; k < p.count; k++) {
+    const x = p.getX(k), z = p.getZ(k);
+    const taper = THREE.MathUtils.smoothstep(Math.min(x - x0, x1 - x, z - z0, z1 - z), 0, 30);
+    p.setY(k, h(x, z) * taper - 0.3 - 0.7 * (1 - taper));
+  }
   g.computeVertexNormals();
   const n = g.attributes.normal as THREE.BufferAttribute;
   const col = new Float32Array(p.count * 3);
@@ -144,7 +152,7 @@ const def: LocationDef = {
     const hh = duneHeight([
       [-95, -150, 38, 55, 45], [-60, -115, 18, 28, 26], [-140, -120, 30, 40, 40], [-200, -190, 55, 70, 60], [-40, -90, 6, 16, 14],
     ]);
-    g.add(headland(hh, -260, -20, -260, -60, haze, winter));
+    g.add(headland(hh, -260, 25, -260, -60, haze, winter));
     // umbrella pines dotting the headland's top
     {
       const pine = stonePine(1, 3);

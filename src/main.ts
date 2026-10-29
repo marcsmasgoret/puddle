@@ -21,6 +21,7 @@ import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
 import { AdaptiveQuality } from './render/quality';
 import { LavaCrust } from './render/lavaCrust';
+import { LavaPlates } from './render/lavaPlates';
 import { Toys } from './scene/toys';
 import { Stones } from './scene/stones';
 import { Fishing } from './scene/fishing';
@@ -81,6 +82,9 @@ scene.add(groundMesh, bed.mesh);
 const waterScene = new THREE.Scene();
 const water = createWaterMesh(solver);
 waterScene.add(water.mesh);
+// rigid rafts of crust riding on lava (drawn over the melt)
+const lavaPlates = new LavaPlates(renderer, solver, water.uniforms);
+waterScene.add(lavaPlates.mesh);
 
 const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
 // molten rock lights up its surroundings (a warm light just above the pool)
@@ -338,6 +342,15 @@ function updateJamMarks() {
   }
 }
 
+function fingerUp(f: Finger) {
+  liftFinger(f);
+  // yanked out of oobleck: it jams around the hole (a brief matte patch)
+  if (fluid.rheology.kind === 'shearThickening' && f.inWater && f.depth > 0.004) {
+    jamMarks.unshift({ x: f.x, z: f.z, t: solver.simTime, s: 1 });
+    jamMarks.length = Math.min(jamMarks.length, 4);
+  }
+}
+
 function slapAt(x: number, z: number) {
   // a slap shatters any ice within reach of the hand
   if (world.ice.enabled && solver.sdfAt(x, z) > -0.2) {
@@ -386,7 +399,7 @@ attachPointer(canvas, camera, {
   },
   onFingerUp(id) {
     const f = fingers.get(id);
-    if (f) liftFinger(f);
+    if (f) fingerUp(f);
   },
   onPressAnywhere: () => {
     if (!panel.isOpen() && !drawer.isOpen() && !soundCard.isOpen() && !tutorial.isOpen()) return false;
@@ -488,11 +501,13 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
     const d = 0.006;
     dm.uTint.value.setRGB(...(o.absorption.map((k) => Math.exp(-k * d)) as [number, number, number]));
   } else dm.uTint.value.setRGB(1, 1, 1);
-  // lava: the crust field, glowing drops, and the warm light it throws
-  lavaCrust.enabled = o.kind === 'lava';
+  // lava: the skin on the melt, the crust plates, glowing drops, and the
+  // warm light it throws
+  lavaCrust.enabled = lavaPlates.enabled = o.kind === 'lava';
   if (o.kind === 'lava') {
     lavaCrust.crustTime = o.crustTime;
     lavaCrust.restart();
+    lavaPlates.restart();
     dm.uTint.value.setRGB(0.05, 0.03, 0.03);
   }
   (dm.uEmit.value as THREE.Color).setRGB(...((o.kind === 'lava' ? [3.2, 0.7, 0.08] : [0, 0, 0]) as [number, number, number]));
@@ -628,7 +643,6 @@ world.ready().then(() => {
   rig.snap();
 });
 
-document.getElementById('build')!.textContent = `build ${__COMMIT__}`;
 
 // ── main loop ────────────────────────────────────────────────────────────────
 const clock = new THREE.Timer();
@@ -706,7 +720,7 @@ if (new URLSearchParams(location.search).has('eng')) engineering.toggle(true);
   },
   spawnToy: (kind: 'duck' | 'paperBoat' | 'sailboat' | 'donut', x: number, y: number, z: number) => toys.spawn(kind, new THREE.Vector3(x, y, z)),
   hold: (id: number, x: number, z: number) => fingers.set(id, newFinger(x, z, 'hold')),
-  release: (id: number) => fingers.get(id) && liftFinger(fingers.get(id)!),
+  release: (id: number) => fingers.get(id) && fingerUp(fingers.get(id)!),
   fingers,
   stir: (x0: number, z0: number, x1: number, z1: number, dt: number) => {
     for (const imp of stirImpulses(x0, z0, x1, z1, dt)) if (isWater(imp.x, imp.z)) solver.addImpulse(imp);
@@ -762,6 +776,7 @@ renderer.setAnimationLoop(() => {
   wetMap.update(renderer, Math.min(dt, 1 / 20));
   caustics.update(renderer, world.env.sunDir);
   lavaCrust.update(Math.min(dt, 1 / 20));
+  lavaPlates.update(Math.min(dt, 1 / 20));
   water.uniforms.uCrust.value = lavaCrust.texture;
   water.uniforms.uTime.value += dt;
   if (lavaOn) lavaLight.intensity = 7 + 0.6 * Math.sin(solver.simTime * 2.3) + 0.5 * Math.sin(solver.simTime * 5.1);

@@ -28,6 +28,13 @@
 // Pulling out of a viscous liquid, the liquid clings to the skin and is
 // lifted in a short-lived mound before it oozes back: a brief negative
 // pressure (suction) after release, for the viscous fluids only.
+//
+// Oobleck is different both ways. Pressed in slowly it is a thick liquid,
+// and a dense suspension is dragged along over a zone several fingertips
+// wide (the jammed front around an intruder runs well ahead of it), so the
+// finger sinks into a wide funnel. Pulled out quickly it jams: the grains
+// lock, the hole holds its shape for a moment (JAM_HOLD), then the
+// suspension relaxes and the hole slowly oozes shut. It never clings.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { FluidProperties } from './fluids';
 import type { Load } from './pressureMap';
@@ -37,6 +44,9 @@ import { stirImpulses } from './stir';
 export const FINGER_TIP = 0.009; // [m] fingertip radius
 
 export type FingerMode = 'stir' | 'hold';
+
+const JAM_HOLD = 0.4; // [s] a jammed hole keeps its shape this long
+const JAM_OOZE = 0.8; // [s] then closes with this time constant
 
 export interface Finger {
   x: number;
@@ -83,13 +93,16 @@ export function stepFinger(
 ): Load[] {
   const w = wettingDrag(fluid);
   const H = Math.max(restDepth, 0.001);
+  const jams = fluid.rheology.kind === 'shearThickening';
   // how deep the tip wants to be: a press goes most of the way down, a stir
   // skims through the upper part of the layer
   const target = f.up || !f.inWater ? 0 : f.mode === 'hold' ? 0.75 * H : 0.4 * H;
-  // pushing in is slow and deliberate; pulling out is quicker
-  const tau = target > f.depth ? (f.mode === 'hold' ? 0.45 : 0.1) : 0.15;
+  // pushing in is slow and deliberate; pulling out is quicker. A jammed
+  // oobleck hole stays open, then oozes shut
+  const jammed = jams && f.up && f.sinceUp < JAM_HOLD;
+  const tau = target > f.depth ? (f.mode === 'hold' ? 0.45 : 0.1) : jams && f.up ? JAM_OOZE : 0.15;
   const prev = f.depth;
-  f.depth += (target - f.depth) * (1 - Math.exp(-dt / tau));
+  if (!jammed) f.depth += (target - f.depth) * (1 - Math.exp(-dt / tau));
   const a = FINGER_TIP;
 
   // 1. displacement: the volume the tip pushes aside appears around it
@@ -113,10 +126,11 @@ export function stepFinger(
 
   // 2. the dimple, and the cling on the way out
   const loads: Load[] = [];
-  if (f.depth > 0.0002) loads.push({ x: f.x, z: f.z, radius: Math.max(1.3 * a, minR), pressure: fluid.density * g * w * f.depth });
+  const spread = jams ? 4.5 : 1.3;
+  if (f.depth > 0.0002) loads.push({ x: f.x, z: f.z, radius: Math.max(spread * a, minR), pressure: fluid.density * g * w * f.depth });
   if (f.up) {
     f.sinceUp += dt;
-    if (w > 0.3 && f.sinceUp < 0.8) {
+    if (w > 0.3 && !jams && f.sinceUp < 0.8) {
       const lift = 0.35 * w * f.liftDepth * Math.exp(-f.sinceUp / 0.22);
       loads.push({ x: f.x, z: f.z, radius: Math.max(1.5 * a, minR), pressure: -fluid.density * g * lift });
     }
@@ -133,5 +147,5 @@ export function liftFinger(f: Finger) {
 
 /** finished: out of the fluid and the cling has relaxed */
 export function fingerDone(f: Finger) {
-  return f.up && f.depth < 0.0002 && f.sinceUp > 0.8;
+  return f.up && f.depth < 0.0002 && f.sinceUp > JAM_HOLD + 0.8;
 }
