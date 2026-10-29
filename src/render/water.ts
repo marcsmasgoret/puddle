@@ -18,9 +18,10 @@
 //   (contact angle ≈ 140°), so its edge is a rounded bead that curves down
 //   into the soil, catching light along the rim.
 //
-//  OPAQUE (oobleck) — a dense starch suspension scatters light within a
-//   millimetre: it looks like matte cream with a wet sheen. Very thin edges
-//   still show the bed through them. When it jams under a hit, grains poke
+//  OPAQUE (oobleck, chocolate sauce) — a dense suspension scatters or
+//   absorbs light within a millimetre: oobleck looks like matte cream with a
+//   wet sheen, chocolate like a dark glossy syrup. Very thin edges still
+//   show the bed through them. When oobleck jams under a hit, grains poke
 //   through the surface and it briefly goes dull (dilatancy).
 //
 // All three add the sun's specular glint (GGX microfacet model).
@@ -62,6 +63,8 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
     uAlbedo: { value: new THREE.Color() },
     uExtinction: { value: 0 },
     uMeniscus: { value: 0 },
+    uBump: { value: 1 },
+    uSheen: { value: 1.6 },
     uIce: { value: null as THREE.Texture | null },
     uIceOn: { value: 0 },
     // lava: crust thickness field, melt temperature, crust colour, clock
@@ -96,7 +99,7 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
       uniform mat4 uReflMatrix;
       uniform vec3 uSunDir, uSunColor, uAmbient, uAbsorption, uTurbidity, uScatter, uAlbedo;
       uniform vec3 uMetalN, uMetalK;
-      uniform float uIor, uRoughness, uExtinction, uMeniscus;
+      uniform float uIor, uRoughness, uExtinction, uMeniscus, uBump, uSheen;
       uniform int uMode;
       uniform vec4 uJamMarks[4];
       varying vec3 vWPos;
@@ -204,14 +207,15 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           edgeBand = 0.0008;
         } else if (uMode == 2) {
           // ── opaque suspension ──
-          // the small yield stress leaves the surface gently lumpy instead of
-          // perfectly level: a soft, low-amplitude bump texture
+          // oobleck's small yield stress leaves the surface gently lumpy
+          // instead of perfectly level: a soft, low-amplitude bump texture
+          // (chocolate sauce has almost none: it levels smooth and glossy)
           vec2 q = vWPos.xz * 9.0;
           float e = 0.05;
           float b = vnoise(q) + 0.5 * vnoise(q * 2.3 + 4.0);
           vec2 g = vec2(vnoise(q + vec2(e, 0.0)) + 0.5 * vnoise((q + vec2(e, 0.0)) * 2.3 + 4.0) - b,
                         vnoise(q + vec2(0.0, e)) + 0.5 * vnoise((q + vec2(0.0, e)) * 2.3 + 4.0) - b) / e;
-          n = normalize(n + vec3(g.x, 0.0, g.y) * 0.025);
+          n = normalize(n + vec3(g.x, 0.0, g.y) * 0.025 * uBump);
           cosV = clamp(dot(n, V), 0.0, 1.0);
           Hv = normalize(V + uSunDir);
           NdL = max(dot(n, uSunDir), 0.0);
@@ -245,25 +249,37 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
           diffuse *= ao;
           float Ds = ggx(n, Hv, rough);
           vec3 spec = uSunColor * fresnel(max(dot(V, Hv), 0.0), uIor) * min(Ds * geom, 40.0) * NdL * (1.0 - 0.9 * jam);
-          vec3 body = mix(diffuse, refl * ao, min(F * 1.6, 1.0));
+          vec3 body = mix(diffuse, refl * ao, min(F * uSheen, 1.0));
           // a film thinner than the scattering length shows the bed through it
           float T = exp(-uExtinction * depth);
           col = mix(body, texture2D(uSceneColor, refrUv).rgb, T) + spec;
         } else if (uMode == 3) {
           // ── lava ──
-          // the glowing melt. Its pattern lives on material coordinates
-          // carried with the flow (lavaCrust.ts), so it streams like the
-          // liquid it is; where it lies still a thin, darker skin cools on
-          // it. The solid crust plates ride on top (lavaPlates.ts).
+          // all molten: a marbled magma of yellow, orange, red and nearly
+          // black cooled streaks folded together. The pattern lives on
+          // material coordinates carried with the flow (lavaCrust.ts), so a
+          // slap or a stir stretches, folds and swirls it; a slow convective
+          // churn keeps it moving when the puddle is still. Where the surface
+          // sits still, a darker skin dims the cooler streaks; moving melt
+          // tears it and glows brighter.
           vec4 cr = texture2D(uCrust, vUv);
-          float crust = cr.r;
+          float skin = cr.r;
           vec2 mc = cr.gb;
-          float churn = fbm(mc * 7.0 + vec2(uTime * 0.12, -uTime * 0.08));
-          float streak = fbm(mc * vec2(18.0, 6.0) + churn * 1.5 - uTime * 0.05);
-          float T = uLavaT - 190.0 * (1.0 - churn) - 200.0 * streak * streak - 330.0 * crust;
+          // domain-warped noise: folds within folds, like stirred paint
+          vec2 w1 = vec2(fbm(mc * 2.6 + vec2(uTime * 0.035, 0.0)), fbm(mc * 2.6 + vec2(5.2, -uTime * 0.03)));
+          vec2 w2 = vec2(fbm(mc * 5.0 + w1 * 2.2 + vec2(1.7, 9.2) + uTime * 0.02), fbm(mc * 5.0 + w1 * 2.2 + vec2(8.3, 2.8)));
+          float heat = fbm(mc * 4.0 + w2 * 2.4);
+          // thin cooled ribbons where the folds meet
+          float rib = pow(1.0 - abs(2.0 * fbm(mc * 7.0 + w2 * 3.0 + 3.1) - 1.0), 4.0);
+          float hot = smoothstep(0.42, 0.85, heat);
+          float T = 940.0 + 560.0 * hot - 140.0 * rib - 200.0 * skin * (1.0 - hot);
           // radiance ∝ T⁴ (Stefan–Boltzmann), relative to 1420 K
-          float I = pow(T / 1420.0, 4.0) * 2.1;
+          float I = pow(T / 1420.0, 4.0) * 1.7;
           vec3 melt = blackbody(T) * I;
+          // the coolest streaks have gone dark, still molten beneath
+          float dark = smoothstep(0.3, 0.8, rib) * (1.0 - hot);
+          vec3 cool = uCrustColor * (uAmbient * 0.6 + uSunColor * NdL * 0.5) + blackbody(900.0) * 0.12;
+          melt = mix(melt, cool, dark * 0.85);
           // the liquid surface is smooth: a faint glassy sheen of the sky
           melt += refl * fresnel(cosV, 1.6) * 0.25 + uSunColor * min(D * geom, 30.0) * NdL * 0.05;
           col = melt;
@@ -350,6 +366,8 @@ export function createWaterMesh(solver: ShallowWaterSolver) {
       u.uIor.value = 1.55;
     } else {
       u.uMode.value = 2;
+      u.uBump.value = o.bump ?? 1;
+      u.uSheen.value = o.sheen ?? 1.6;
       u.uAlbedo.value.setRGB(...o.albedo);
       u.uIor.value = o.ior;
       u.uExtinction.value = o.extinction;

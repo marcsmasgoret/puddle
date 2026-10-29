@@ -261,7 +261,7 @@ export class Audio {
       this.tone(160, 55, 0.5 * s, 0.003, 0.18); // the hand hitting the layer
       this.burst('bandpass', 1400, 0.7, 0.45 * s, 0.003, 0.25);
       this.splashTail(sprayMl, 0.0015);
-    } else if (fluid === 'honey') {
+    } else if (fluid === 'honey' || fluid === 'chocolate') {
       // heavy and sticky: a low gloop, then a slow suction pop
       this.tone(110, 60, 0.6 * s, 0.01, 0.45);
       this.burst('lowpass', 500, 1, 0.3 * s, 0.01, 0.4);

@@ -122,17 +122,18 @@ At $\Delta x = 4.5$ mm in water the capillary term dominates: $\Delta t \approx 
 
 The simulation runs in real SI units at real size, so no hidden scaling is applied anywhere. The only link between reality and the simulation is the grid spacing: ripples shorter than about $2\Delta x$ cannot be represented.
 
-| | Water (20 °C) | Honey | Mercury | Oobleck | Lava | Red jello |
-|---|---|---|---|---|---|---|
-| Density $\rho$ (kg/m³) | 998.21 | 1420 | 13 534 | ≈ 1260 | ≈ 2600 | ≈ 1050 |
-| Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) | ≈ 100 | 0.6 (internal damping) |
-| Surface tension $\sigma$ (N/m) | 0.07274 | 0.063 | 0.4854 | ≈ 0.072 | ≈ 0.35 | ≈ 0.05 |
-| Elasticity | none | none | none | none | none | shear modulus $G \approx 1$ kPa (§4.2) |
-| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension | blackbody glow between rigid crust plates (§4.3) | $n = 1.34$, red dye absorption |
+| | Water (20 °C) | Honey | Chocolate sauce | Mercury | Oobleck | Lava | Red jello |
+|---|---|---|---|---|---|---|---|
+| Density $\rho$ (kg/m³) | 998.21 | 1420 | ≈ 1300 | 13 534 | ≈ 1260 | ≈ 2600 | ≈ 1050 |
+| Viscosity $\mu$ (Pa·s) | $1.0016\times10^{-3}$ | 7.4 | ≈ 2 | $1.526\times10^{-3}$ | 5 at rest, shear-thickening (§4) | ≈ 100 | 0.6 (internal damping) |
+| Surface tension $\sigma$ (N/m) | 0.07274 | 0.063 | ≈ 0.06 | 0.4854 | ≈ 0.072 | ≈ 0.35 | ≈ 0.05 |
+| Elasticity | none | none | none | none | none | none | shear modulus $G \approx 1$ kPa (§4.2) |
+| Optics | $n = 1.333$, Pope & Fry absorption | $n = 1.49$, blue-absorbing | opaque dark brown, glossy ($n \approx 1.45$) | conductor, $n+ik$ (Inagaki 1981) | opaque white suspension | marbled blackbody glow (§4.3) | $n = 1.34$, red dye absorption |
 
 **Sources:**
 - Water: IAPWS R1-76(2014), IAPWS 2008, IAPWS-95; Pope & Fry 1997.
 - Honey: mean of commercial honeys at 20 °C, Newtonian (Yanniotis et al. 2006). Its viscosity ranges from ~2 to ~60 Pa·s with water content (Lazaridou et al. 2004).
+- Chocolate sauce: density and index from sucrose-solution tables (~65 wt %); viscosity and surface tension are estimates for a thick commercial syrup, which is mildly shear-thinning but close to Newtonian at puddle shear rates.
 - Mercury: Inagaki, Arakawa & Williams 1981.
 - Oobleck: a starch volume fraction of 0.44 after Fall et al. 2012.
 - Lava: basaltic (pāhoehoe) melt near 1150 °C; Shaw et al. 1968, Murase & McBirney 1973.
@@ -181,7 +182,7 @@ $$\frac{\partial \mathbf u}{\partial t} \mathrel{+}= -\frac{3G}{\rho h^2}\,\bold
 
 so each column wobbles at $\omega = \sqrt{3G/\rho}/h \approx 70$ rad/s (≈ 11 Hz) in 2.5 cm, disturbances spread as shear waves at $c_s = \sqrt{G/\rho} \approx 1$ m/s, and the viscous term damps the jiggle in about a second. The stability bound adds $3G/(\rho h_{\min}^2) + 8G/(\rho\Delta x^2)$ to $\omega_{\max}^2$ (§2.7).
 
-### 4.3 Lava: glow, skin and crust plates
+### 4.3 Lava: a marbled glow
 
 Lava runs through the same equations with its own properties: dense, very viscous (so its waves are overdamped, like honey's) and with a high surface tension. What is new is the surface. Exposed melt at about 1420 K glows: its colour is blackbody radiation (by Wien's law the peak is at 2.0 µm, in the infrared, so only the red end reaches the visible) and its brightness follows the Stefan–Boltzmann $T^4$. The surface radiates and cools, and a thin dark skin grows over still melt in seconds; wherever the melt moves or stretches, the skin tears. The skin is still liquid and streams with the melt. A skin field $c \in [0, 1]$ per cell models this:
 
@@ -189,7 +190,7 @@ $$\frac{dc}{dt} = \frac{c_{eq} - c}{t_{crust}} - c\left(\frac{|\mathbf u|}{0.02\
 
 with $t_{crust} \approx 2.5$ s and $c_{eq} < 1$ over slowly drifting convective hot spots, where fresh melt keeps welling up.
 
-On top of the melt ride **plates of solid crust**, as on a lava lake. They start as a Voronoi tiling of the pool (cooling cracks meet at roughly 120°), each cell drawn in from its neighbours to open a glowing crack. Each plate is a rigid body: it keeps its outline and moves only as a whole, relaxing over 0.25 s toward the melt velocity under its centre and toward the melt's local spin $\Omega = \tfrac12(\partial u/\partial z - \partial v/\partial x)$, both read back from the GPU. Plates do not pass through each other: overlapping plates are pushed apart and lose their closing speed, and plates shoved together hard ride up over one another. A gentle repulsion between neighbours spreads the plates back over open melt, so a slap opens a glowing patch that slowly closes again. Each plate rides the surface as a rigid plane fitted to $\eta$ across its footprint, so it rocks on a passing wave rather than bending with it.
+The melt is not one temperature. Hotter and cooler rock is folded together into a marble of yellow, orange, red and nearly black ribbons, drawn on material coordinates that are advected with the depth-averaged velocity, so a slap or a stir stretches and swirls the pattern exactly as the flow moves. The coordinates relax back to rest over about 20 s, so the marble never smears into endless streaks, and a slow convective churn keeps it alive when the pool is still. The skin field dims the cooler ribbons where the surface sits still; moving melt tears it and glows brighter.
 
 ---
 

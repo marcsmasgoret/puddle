@@ -1,14 +1,15 @@
 // The skin on the melt of a lava puddle. Exposed melt radiates and cools;
 // within a few seconds a thin, darker skin forms over a surface that sits
 // still, and the flow tears it open again. The skin is still liquid and
-// streams with the melt. The solid crust plates that ride on top are rigid
-// bodies of their own (lavaPlates.ts).
+// streams with the melt.
 //
 // Per simulation cell:
 //   R   crust cover, 0 (bare, glowing melt) to 1 (closed crust)
 //   GB  material coordinates [m]: where this bit of surface started. They
-//       are carried with the flow, so the glow pattern drawn on them
-//       (water.ts) streams with the melt instead of sitting still on screen
+//       are carried with the flow, so the marbled glow drawn on them
+//       (water.ts) is stretched and folded by the melt instead of sitting
+//       still on screen. They slowly relax back to the cell's own position
+//       (over ~20 s), so the pattern never stretches into endless streaks
 //
 //   advection  both are moved semi-Lagrangian with the depth-averaged
 //              velocity u
@@ -16,8 +17,7 @@
 //              keeps the skin from closing) and lower over slow-
 //              drifting hot spots where fresh melt wells up
 //   tearing    dc/dt = −c · (|S| / 1.5 s⁻¹ + |u| / 0.08 m/s)
-// with |S| the strain rate. Where the melt lies bare, the coordinates are
-// reset to the cell's own position.
+// with |S| the strain rate.
 import * as THREE from 'three';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import type { ShallowWaterSolver } from '../physics/solver';
@@ -83,8 +83,7 @@ export class LavaCrust {
           crust += uDt * (eq - crust) / uT;
           crust -= uDt * crust * (strain / 1.5 + length(vel) / 0.08);
           crust = clamp(crust, 0.0, 1.0);
-          // bare melt: fresh surface, fresh coordinates
-          m = mix(m, p, smoothstep(0.06, 0.0, crust));
+          m = mix(m, p, 1.0 - exp(-uDt / 20.0));
           gl_FragColor = vec4(crust, m, 1.0);
         }`,
       depthTest: false,

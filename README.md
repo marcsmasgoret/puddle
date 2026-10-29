@@ -20,7 +20,7 @@ Puddle is a browser toy built on a GPU solver for the shallow-water equations. W
 
 - **Slap** the water. Hand speed is set by the strength slider, 0.3 to 5 m/s. Hard slaps throw spray, and the spray lands back as drops that make their own ripples.
 - **Stir** by dragging, or **press and hold** to push a fingertip in. Move faster than the wave speed and you leave a V-shaped wake; drag through honey and the trench oozes shut.
-- **Change the fluid:** water, honey, mercury, oobleck, lava or red jello, each with measured properties. Oobleck goes solid when you hit it; lava glows between rigid plates of crust that drift, jostle and part where it moves; jello is an elastic gel that jiggles and springs back.
+- **Change the fluid:** water, honey, chocolate sauce, mercury, oobleck, lava or red jello, each with measured or estimated real properties. Oobleck goes solid when you hit it; lava is a marbled magma of yellow, orange, red and black streaks that swirl with the flow; jello is an elastic gel that jiggles and springs back.
 - **Float toys:** a rubber duck, a paper boat, a sailboat and a beach donut, at their real sizes and masses. They ride the waves, get pushed along by them, and make their own.
 - **Skip stones** in first person with a side-arm swipe. About 20° of tilt is the magic angle.
 - **Fish** with the tip of a rod just in view: cast, then watch the bobber. Nothing is ever caught.
@@ -82,7 +82,7 @@ Section 10 of the [write-up](docs/physics.md) has the full tables. It also cover
 ```
 src/
   physics/           the simulation (heavily commented; every equation explained)
-    fluids.ts          measured properties of water, honey, mercury, oobleck
+    fluids.ts          real properties of every fluid, with sources
     grid.ts            the staggered grid
     puddleShape.ts     signed-distance edge and bowl-shaped floor
     swe/shaders.ts     the equations, as GPU passes

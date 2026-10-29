@@ -79,10 +79,14 @@ export type Optics =
       /** extinction coefficient: how quickly the bed disappears [1/m] */
       extinction: number;
       roughness: number;
+      /** how lumpy the resting surface is (1 = oobleck's yield-stress lumps) */
+      bump?: number;
+      /** boost of the wet sheen over plain Fresnel (oobleck's cream: 1.6) */
+      sheen?: number;
     };
 
 export interface FluidProperties {
-  id: 'water' | 'honey' | 'mercury' | 'oobleck' | 'lava' | 'jello';
+  id: 'water' | 'honey' | 'mercury' | 'oobleck' | 'lava' | 'jello' | 'chocolate';
   name: string;
   /** ρ, density [kg/m³] */
   density: number;
@@ -252,11 +256,12 @@ export const OOBLECK: FluidProperties = {
  *                        as it cools and crystallises
  * - σ  ≈ 0.35 N/m        basaltic melts measure 0.30–0.40 N/m
  *
- * Optics: hot enough to glow. The colour is blackbody radiation at ~1420 K
- * (deep orange: by Wien's law the peak is at 2.0 µm, in the infrared; only
- * the red end reaches the visible). An undisturbed surface radiates and
- * cools, and a dark glassy crust grows over it in seconds; wherever the melt
- * moves, the crust tears and the glowing interior shows through.
+ * Optics: hot enough to glow. The colour is blackbody radiation, ~1000 K
+ * (dull red) to ~1550 K (yellow-orange): by Wien's law the peak is in the
+ * infrared, so only the red end reaches the visible. The melt is not one
+ * temperature: hotter and cooler streaks are folded together by the flow,
+ * and the coolest go nearly black. A still surface radiates and darkens;
+ * moving melt brings hot rock up and glows brighter.
  */
 export const LAVA: FluidProperties = {
   id: 'lava',
@@ -327,7 +332,42 @@ export const HOT_WATER: FluidProperties = {
   surfaceTension: 69.9e-3,
 };
 
-export const FLUIDS = { water: WATER, honey: HONEY, mercury: MERCURY, oobleck: OOBLECK, lava: LAVA, jello: JELLO };
+/**
+ * Chocolate sauce: a cocoa and sugar syrup at room temperature.
+ *
+ * - ρ  ≈ 1300 kg/m³      a ~65 wt % sugar syrup is 1.32 g/cm³; cocoa solids
+ *                        and a little fat bring it close to that
+ * - μ  ≈ 2 Pa·s          (estimate) a thick pouring syrup, a few times
+ *                        thinner than honey. Real sauces are mildly
+ *                        shear-thinning; at puddle shear rates a single
+ *                        Newtonian value is a fair approximation
+ * - σ  ≈ 0.06 N/m        (estimate) sugar raises water's surface tension a
+ *                        little; cocoa butter and emulsifiers lower it
+ *
+ * Optics: cocoa particles absorb and scatter light within a fraction of a
+ * millimetre, so it is opaque and very dark brown, with the glossy sheen of
+ * a sugar syrup (n ≈ 1.45, the index of a ~65 % sucrose solution). Its
+ * surface is smooth, not lumpy like oobleck's.
+ */
+export const CHOCOLATE: FluidProperties = {
+  id: 'chocolate',
+  name: 'Chocolate sauce',
+  density: 1300,
+  viscosity: 2,
+  surfaceTension: 0.06,
+  rheology: { kind: 'newtonian' },
+  optics: { kind: 'opaque', albedo: [0.075, 0.04, 0.02], ior: 1.45, extinction: 4000, roughness: 0.05, bump: 0.12, sheen: 0.8 },
+  wetsGround: true,
+  stain: [0.55, 0.42, 0.33],
+  holdable: true,
+  splashes: true,
+  sources: [
+    'Sucrose solution tables: ~65 wt % sucrose has ρ ≈ 1.32 g/cm³ and n ≈ 1.45',
+    'Viscosity and surface tension: estimates for a thick commercial chocolate syrup (a few Pa·s, mildly shear-thinning)',
+  ],
+};
+
+export const FLUIDS = { water: WATER, honey: HONEY, chocolate: CHOCOLATE, mercury: MERCURY, oobleck: OOBLECK, lava: LAVA, jello: JELLO };
 export type FluidId = keyof typeof FLUIDS;
 
 /** ν = μ/ρ, kinematic viscosity [m²/s]. Momentum diffuses at this rate. */

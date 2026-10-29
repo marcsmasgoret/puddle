@@ -21,7 +21,6 @@ import { Engineering } from './ui/engineering';
 import { Overlay } from './render/overlay';
 import { AdaptiveQuality } from './render/quality';
 import { LavaCrust } from './render/lavaCrust';
-import { LavaPlates } from './render/lavaPlates';
 import { Toys } from './scene/toys';
 import { Stones } from './scene/stones';
 import { Fishing } from './scene/fishing';
@@ -82,9 +81,6 @@ scene.add(groundMesh, bed.mesh);
 const waterScene = new THREE.Scene();
 const water = createWaterMesh(solver);
 waterScene.add(water.mesh);
-// rigid rafts of crust riding on lava (drawn over the melt)
-const lavaPlates = new LavaPlates(renderer, solver, water.uniforms);
-waterScene.add(lavaPlates.mesh);
 
 const isWater = (x: number, z: number) => solver.sdfAt(x, z) < 0;
 // molten rock lights up its surroundings (a warm light just above the pool)
@@ -492,7 +488,7 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
   fingers.clear();
   const o = f.optics;
   caustics.setOptics(o.kind === 'dielectric' ? o.ior : null, o.kind === 'dielectric' ? o.absorption : [0, 0, 0]);
-  const ringRough = f.id === 'honey' ? 0.3 : f.id === 'oobleck' ? 0.9 : 0.78;
+  const ringRough = f.id === 'honey' || f.id === 'chocolate' ? 0.3 : f.id === 'oobleck' ? 0.9 : 0.78;
   for (const m of [groundMat, bedMat]) applyGroundFluid(m, f.stain, f.wetsGround, ringRough);
   const dm = dropMesh.material.uniforms;
   dm.uMetal.value = o.kind === 'metal' ? 1 : 0;
@@ -500,14 +496,15 @@ function applyFluid(chosen: FluidProperties, hot = world.hotTub) {
     // a drop a few mm across: absorption over its diameter
     const d = 0.006;
     dm.uTint.value.setRGB(...(o.absorption.map((k) => Math.exp(-k * d)) as [number, number, number]));
+  } else if (o.kind === 'opaque') {
+    // an opaque drop shows its own colour, not the scene through it
+    dm.uTint.value.setRGB(...o.albedo);
   } else dm.uTint.value.setRGB(1, 1, 1);
-  // lava: the skin on the melt, the crust plates, glowing drops, and the
-  // warm light it throws
-  lavaCrust.enabled = lavaPlates.enabled = o.kind === 'lava';
+  // lava: the flowing marbled melt, glowing drops, and the warm light it throws
+  lavaCrust.enabled = o.kind === 'lava';
   if (o.kind === 'lava') {
     lavaCrust.crustTime = o.crustTime;
     lavaCrust.restart();
-    lavaPlates.restart();
     dm.uTint.value.setRGB(0.05, 0.03, 0.03);
   }
   (dm.uEmit.value as THREE.Color).setRGB(...((o.kind === 'lava' ? [3.2, 0.7, 0.08] : [0, 0, 0]) as [number, number, number]));
@@ -557,7 +554,7 @@ const soundCard = createSoundButton({
 });
 markFluid = panel.addChoice<FluidId>(
   'Fluid',
-  [['water', 'Water'], ['honey', 'Honey'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck'], ['lava', 'Lava'], ['jello', 'Red jello']],
+  [['water', 'Water'], ['honey', 'Honey'], ['chocolate', 'Chocolate sauce'], ['mercury', 'Mercury'], ['oobleck', 'Oobleck'], ['lava', 'Lava'], ['jello', 'Red jello']],
   () => fluid.id,
   (id) => {
     settings.fluid = id;
@@ -590,7 +587,7 @@ panel.addButtons([
         time: pick(TIMES)[0],
         weather: pick(WEATHERS)[0],
       };
-      const f = pick(['water', 'water', 'water', 'honey', 'mercury', 'oobleck', 'lava', 'jello'] as FluidId[]);
+      const f = pick(['water', 'water', 'water', 'honey', 'chocolate', 'mercury', 'oobleck', 'lava', 'jello'] as FluidId[]);
       settings.fluid = f;
       applyFluid(FLUIDS[f]);
       markFluid(f);
@@ -776,7 +773,6 @@ renderer.setAnimationLoop(() => {
   wetMap.update(renderer, Math.min(dt, 1 / 20));
   caustics.update(renderer, world.env.sunDir);
   lavaCrust.update(Math.min(dt, 1 / 20));
-  lavaPlates.update(Math.min(dt, 1 / 20));
   water.uniforms.uCrust.value = lavaCrust.texture;
   water.uniforms.uTime.value += dt;
   if (lavaOn) lavaLight.intensity = 7 + 0.6 * Math.sin(solver.simTime * 2.3) + 0.5 * Math.sin(solver.simTime * 5.1);
